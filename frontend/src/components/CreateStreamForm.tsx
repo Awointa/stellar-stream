@@ -1,4 +1,4 @@
-
+import { useState, FormEvent } from "react";
 import { CreateStreamPayload } from "../types/stream";
 import {
   FieldErrors,
@@ -11,7 +11,6 @@ import {
 interface CreateStreamFormProps {
   onCreate: (payload: CreateStreamPayload) => Promise<void>;
   apiError?: string | null;
-  /** Public key from a connected Freighter wallet, or null if not connected. */
   walletAddress?: string | null;
 }
 
@@ -24,7 +23,11 @@ function humaniseApiError(raw: string): { title: string; hint: string } {
       hint: 'Double-check that both account IDs start with "G" and are exactly 56 characters. You can copy them from Stellar Laboratory.',
     };
   }
-  if (lower.includes("asset") || lower.includes("assetcode") || lower.includes("supported")) {
+  if (
+    lower.includes("asset") ||
+    lower.includes("assetcode") ||
+    lower.includes("supported")
+  ) {
     return {
       title: "Invalid asset code",
       hint: raw,
@@ -100,18 +103,25 @@ const INITIAL_VALUES: FormValues = {
   startInMinutes: "0",
 };
 
-export function CreateStreamForm({ onCreate, apiError, walletAddress }: CreateStreamFormProps) {
+const allowedAssets = ["USDC", "XLM", "BTC"]; // example allowed assets
+
+export function CreateStreamForm({
+  onCreate,
+  apiError,
+  walletAddress,
+}: CreateStreamFormProps) {
   const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
-  const [touched, setTouched] = useState<Partial<Record<keyof FormValues, boolean>>>({});
+  const [touched, setTouched] = useState<
+    Partial<Record<keyof FormValues, boolean>>
+  >({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
-
 
   const errors: FieldErrors = validateForm(values);
   const formValid = isFormValid(errors);
 
   function set(field: keyof FormValues) {
-
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setValues((prev) => ({ ...prev, [field]: e.target.value }));
     };
   }
@@ -120,21 +130,19 @@ export function CreateStreamForm({ onCreate, apiError, walletAddress }: CreateSt
     return () => setTouched((prev) => ({ ...prev, [field]: true }));
   }
 
-
-  }
-
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSubmitAttempted(true);
 
-    if (!walletAddress) return; // wallet must be connected
+    if (!walletAddress) return;
     if (!formValid) return;
 
     setIsSubmitting(true);
     try {
       const now = Math.floor(Date.now() / 1000);
       const offsetMinutes = Number(values.startInMinutes);
-      const startAt = offsetMinutes > 0 ? now + Math.floor(offsetMinutes * 60) : undefined;
+      const startAt =
+        offsetMinutes > 0 ? now + Math.floor(offsetMinutes * 60) : undefined;
 
       await onCreate({
         sender: values.sender.trim(),
@@ -155,140 +163,151 @@ export function CreateStreamForm({ onCreate, apiError, walletAddress }: CreateSt
 
   const parsedApiError = apiError ? humaniseApiError(apiError) : null;
 
+  return (
+    <form onSubmit={handleSubmit}>
+      {parsedApiError && (
+        <div className="api-error-box">
+          <div className="api-error-box__title">{parsedApiError.title}</div>
+          <div className="api-error-box__hint">{parsedApiError.hint}</div>
         </div>
-        <div className="api-error-box__hint">{parsedApiError.hint}</div>
-      </div>
-    )}
-
-    {/* Sender */}
-    <div className={`field-group${fieldError("sender") ? " field-group--error" : ""}`}>
-      <label htmlFor="stream-sender">
-        Sender Account<span className="field-required" aria-hidden>*</span>
-      </label>
-      <input
-        id="stream-sender"
-        type="text"
-        value={values.sender}
-        onChange={set("sender")}
-        onBlur={blur("sender")}
-        placeholder="G… (56-character Stellar public key)"
-        aria-describedby={fieldError("sender") ? "sender-error" : "sender-hint"}
-        aria-invalid={!!fieldError("sender")}
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <AccountHint value={values.sender} />
-      {fieldError("sender") && (
-        <span id="sender-error" className="field-error" role="alert">
-          {fieldError("sender")}
-        </span>
       )}
-    </div>
 
-    {/* Recipient */}
-    <div className={`field-group${fieldError("recipient") ? " field-group--error" : ""}`}>
-      <label htmlFor="stream-recipient">
-        Recipient Account<span className="field-required" aria-hidden>*</span>
-      </label>
-      <input
-        id="stream-recipient"
-        type="text"
-        value={values.recipient}
-        onChange={set("recipient")}
-        onBlur={blur("recipient")}
-        placeholder="G… (56-character Stellar public key)"
-        aria-describedby={fieldError("recipient") ? "recipient-error" : "recipient-hint"}
-        aria-invalid={!!fieldError("recipient")}
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <AccountHint value={values.recipient} />
-      {fieldError("recipient") && (
-        <span id="recipient-error" className="field-error" role="alert">
-          {fieldError("recipient")}
-        </span>
-      )}
-    </div>
-
-    {/* Asset & Total Amount */}
-    <div className="row">
-      <div className={`field-group${fieldError("assetCode") ? " field-group--error" : ""}`}>
-        <label htmlFor="stream-asset">
-          Asset Code<span className="field-required" aria-hidden>*</span>
+      {/* Sender */}
+      <div
+        className={`field-group${errors.sender ? " field-group--error" : ""}`}
+      >
+        <label htmlFor="stream-sender">
+          Sender Account
+          <span className="field-required" aria-hidden>
+            *
+          </span>
         </label>
-        {allowedAssets.length > 0 ? (
-          <>
-            <select
-              id="stream-asset"
-              value={values.assetCode}
-              onChange={set("assetCode")}
-              onBlur={blur("assetCode")}
-              aria-describedby={fieldError("assetCode") ? "asset-error" : "asset-hint"}
-              aria-invalid={!!fieldError("assetCode")}
-              required
-            >
-              {allowedAssets.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
-            <span id="asset-hint" className="field-hint">
-              Allowed assets: {allowedAssets.join(", ")}
+        <input
+          id="stream-sender"
+          type="text"
+          value={values.sender}
+          onChange={set("sender")}
+          onBlur={blur("sender")}
+          placeholder="G… (56-character Stellar public key)"
+          aria-describedby={errors.sender ? "sender-error" : "sender-hint"}
+          aria-invalid={!!errors.sender}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <AccountHint value={values.sender} />
+        {errors.sender && (
+          <span id="sender-error" className="field-error" role="alert">
+            {errors.sender}
+          </span>
+        )}
+      </div>
+
+      {/* Recipient */}
+      <div
+        className={`field-group${errors.recipient ? " field-group--error" : ""}`}
+      >
+        <label htmlFor="stream-recipient">
+          Recipient Account
+          <span className="field-required" aria-hidden>
+            *
+          </span>
+        </label>
+        <input
+          id="stream-recipient"
+          type="text"
+          value={values.recipient}
+          onChange={set("recipient")}
+          onBlur={blur("recipient")}
+          placeholder="G… (56-character Stellar public key)"
+          aria-describedby={
+            errors.recipient ? "recipient-error" : "recipient-hint"
+          }
+          aria-invalid={!!errors.recipient}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <AccountHint value={values.recipient} />
+        {errors.recipient && (
+          <span id="recipient-error" className="field-error" role="alert">
+            {errors.recipient}
+          </span>
+        )}
+      </div>
+
+      {/* Asset & Total Amount */}
+      <div className="row">
+        <div
+          className={`field-group${errors.assetCode ? " field-group--error" : ""}`}
+        >
+          <label htmlFor="stream-asset">
+            Asset Code
+            <span className="field-required" aria-hidden>
+              *
             </span>
-          </>
-        ) : (
-          <input
+          </label>
+          <select
             id="stream-asset"
-            type="text"
             value={values.assetCode}
             onChange={set("assetCode")}
             onBlur={blur("assetCode")}
-            placeholder="USDC"
-            maxLength={12}
-            aria-describedby={fieldError("assetCode") ? "asset-error" : undefined}
-            aria-invalid={!!fieldError("assetCode")}
+            aria-describedby={errors.assetCode ? "asset-error" : "asset-hint"}
+            aria-invalid={!!errors.assetCode}
+            required
+          >
+            {allowedAssets.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+          {errors.assetCode && (
+            <span id="asset-error" className="field-error" role="alert">
+              {errors.assetCode}
+            </span>
+          )}
+        </div>
+
+        <div
+          className={`field-group${errors.totalAmount ? " field-group--error" : ""}`}
+        >
+          <label htmlFor="stream-amount">
+            Total Amount
+            <span className="field-required" aria-hidden>
+              *
+            </span>
+          </label>
+          <input
+            id="stream-amount"
+            type="number"
+            min="0.000001"
+            step="0.000001"
+            value={values.totalAmount}
+            onChange={set("totalAmount")}
+            onBlur={blur("totalAmount")}
+            onKeyDown={(e) => {
+              if (["e", "E", "+"].includes(e.key)) e.preventDefault();
+            }}
+            aria-describedby={errors.totalAmount ? "amount-error" : undefined}
+            aria-invalid={!!errors.totalAmount}
             required
           />
-        )}
-        {fieldError("assetCode") && (
-          <span id="asset-error" className="field-error" role="alert">
-            {fieldError("assetCode")}
-          </span>
-        )}
+          {errors.totalAmount && (
+            <span id="amount-error" className="field-error" role="alert">
+              {errors.totalAmount}
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className={`field-group${fieldError("totalAmount") ? " field-group--error" : ""}`}>
-        <label htmlFor="stream-amount">
-          Total Amount<span className="field-required" aria-hidden>*</span>
-        </label>
-        <input
-          id="stream-amount"
-          type="number"
-          min="0.000001"
-          step="0.000001"
-          value={values.totalAmount}
-          onChange={set("totalAmount")}
-          onBlur={blur("totalAmount")}
-          onKeyDown={(e) => { if (["e", "E", "+"].includes(e.key)) e.preventDefault(); }}
-          aria-describedby={fieldError("totalAmount") ? "amount-error" : undefined}
-          aria-invalid={!!fieldError("totalAmount")}
-          required
-        />
-        {fieldError("totalAmount") && (
-          <span id="amount-error" className="field-error" role="alert">
-            {fieldError("totalAmount")}
-          </span>
-        )}
-      </div>
-    </div>
-
-
-      </div>
-
-      <div className={`field-group${fieldError("startInMinutes") ? " field-group--error" : ""}`}>
+      {/* Start In Minutes */}
+      <div
+        className={`field-group${errors.startInMinutes ? " field-group--error" : ""}`}
+      >
         <label htmlFor="stream-start">
-          Start In (minutes)<span className="field-required" aria-hidden>*</span>
+          Start In (minutes)
+          <span className="field-required" aria-hidden>
+            *
+          </span>
         </label>
         <input
           id="stream-start"
@@ -298,30 +317,33 @@ export function CreateStreamForm({ onCreate, apiError, walletAddress }: CreateSt
           value={values.startInMinutes}
           onChange={set("startInMinutes")}
           onBlur={blur("startInMinutes")}
-          onKeyDown={(e) => { if (["e", "E", "+", "-", "."].includes(e.key)) e.preventDefault(); }}
-          aria-describedby={fieldError("startInMinutes") ? "start-error" : "start-hint"}
-          aria-invalid={!!fieldError("startInMinutes")}
+          onKeyDown={(e) => {
+            if (["e", "E", "+", "-", "."].includes(e.key)) e.preventDefault();
+          }}
+          aria-describedby={
+            errors.startInMinutes ? "start-error" : "start-hint"
+          }
+          aria-invalid={!!errors.startInMinutes}
           required
         />
         <span id="start-hint" className="field-hint">
           Enter 0 to start immediately
         </span>
-        {fieldError("startInMinutes") && (
+        {errors.startInMinutes && (
           <span id="start-error" className="field-error" role="alert">
-            {fieldError("startInMinutes")}
+            {errors.startInMinutes}
           </span>
         )}
       </div>
-    </div>
 
-    <button
-      className="btn-primary"
-      type="submit"
-      disabled={isSubmitting || (submitAttempted && !formValid)}
-      aria-busy={isSubmitting}
-    >
-      {isSubmitting ? "Creating…" : "Create Stream"}
-    </button>
-
-
+      <button
+        className="btn-primary"
+        type="submit"
+        disabled={isSubmitting || (submitAttempted && !formValid)}
+        aria-busy={isSubmitting}
+      >
+        {isSubmitting ? "Creating…" : "Create Stream"}
+      </button>
+    </form>
+  );
 }
