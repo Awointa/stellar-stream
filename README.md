@@ -81,8 +81,15 @@ Query params (optional):
 - `status: scheduled | active | completed | canceled`
 - `sender: string` (exact sender match)
 - `recipient: string` (exact recipient match)
+- `asset: string` (exact asset code match)
+- `q: string` (general search term - searches stream ID, sender, recipient, and asset code, case-insensitive)
 - `page: number` (integer `>= 1`)
 - `limit: number` (integer `1..100`)
+
+Search behavior:
+- The `q` parameter performs case-insensitive partial matching across stream ID, sender, recipient, and asset code
+- Search combines with other filters (all filters are applied together)
+- Empty or whitespace-only search terms are ignored
 
 Pagination behavior:
 - If both `page` and `limit` are omitted, legacy mode applies and all matching rows are returned.
@@ -106,6 +113,22 @@ Response:
 
 Error:
 - `404` if stream does not exist
+
+### `GET /api/recipients/:accountId/streams`
+Purpose:
+- Fetch all streams for a specific recipient account
+
+Path parameters:
+- `accountId: string` (Stellar account ID starting with G, exactly 56 characters)
+
+Validation:
+- Account ID must be a valid Stellar account ID format
+
+Response:
+- `data: Stream[]` (includes computed `progress` for each stream)
+
+Error:
+- `400` if account ID is invalid
 
 ### `POST /api/streams`
 Purpose:

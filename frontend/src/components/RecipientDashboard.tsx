@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { listStreams } from "../services/api";
+import { listRecipientStreams } from "../services/api";
 import { Stream } from "../types/stream";
+import { CopyableAddress } from "./CopyableAddress";
 
 interface RecipientDashboardProps {
   /** Connected wallet address (recipient account). When null, user must connect. */
@@ -45,7 +46,7 @@ export function RecipientDashboard({ recipientAddress }: RecipientDashboardProps
       if (!active) return;
       
       try {
-        const data = await listStreams({ recipient: recipientAddress });
+        const data = await listRecipientStreams(recipientAddress);
         if (!active) return;
         setStreams(data);
       } catch (err) {
@@ -185,9 +186,7 @@ export function RecipientDashboard({ recipientAddress }: RecipientDashboardProps
                   {activeStreams.map((stream) => (
                     <tr key={stream.id}>
                       <td>
-                        <span className="truncate-address">
-                          {stream.sender.slice(0, 8)}…{stream.sender.slice(-4)}
-                        </span>
+                        <CopyableAddress address={stream.sender} truncationMode="end" />
                       </td>
                       <td>{stream.assetCode}</td>
                       <td>
@@ -243,9 +242,7 @@ export function RecipientDashboard({ recipientAddress }: RecipientDashboardProps
                   {completedStreams.map((stream) => (
                     <tr key={stream.id}>
                       <td>
-                        <span className="truncate-address">
-                          {stream.sender.slice(0, 8)}…{stream.sender.slice(-4)}
-                        </span>
+                        <CopyableAddress address={stream.sender} truncationMode="end" />
                       </td>
                       <td>{stream.assetCode}</td>
                       <td>

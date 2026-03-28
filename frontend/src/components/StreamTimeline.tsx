@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { getStreamHistory, listAllEvents, StreamEvent } from "../services/api";
+import { CopyableAddress } from "./CopyableAddress";
 
 interface StreamTimelineProps {
   streamId?: string;
@@ -133,10 +134,6 @@ function getEventDescription(event: StreamEvent): string {
       return `Action performed by ${actor}`;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function StreamTimeline({ streamId }: StreamTimelineProps) {
   const [events, setEvents] = useState<StreamEvent[]>([]);
