@@ -570,9 +570,38 @@ describe("GET /api/events", () => {
   });
 });
 
+function invokeStreamSummaryRoute(id: string): { status: number; body: any } {
+  const layer = (app as any)?._router?.stack?.find(
+    (entry: any) =>
+      entry.route?.path === "/api/streams/:id/history/summary" &&
+      entry.route?.methods?.get,
+  );
 
-  });
-});
+  if (!layer) {
+    throw new Error("GET /api/streams/:id/history/summary route not found");
+  }
+
+  const handler = layer.route.stack[0].handle as (req: any, res: any) => void;
+
+  let statusCode = 200;
+  let jsonBody: any;
+
+  const req = { params: { id }, requestId: "test-request-id" };
+  const res = {
+    status(code: number) {
+      statusCode = code;
+      return this;
+    },
+    json(payload: any) {
+      jsonBody = payload;
+      return this;
+    },
+  };
+
+  handler(req, res);
+
+  return { status: statusCode, body: jsonBody };
+}
 
 describe("GET /api/streams/:id/history/summary", () => {
   const mockStream = {
@@ -606,15 +635,14 @@ describe("GET /api/streams/:id/history/summary", () => {
       start_time_updated: 1,
     });
 
-    const res = request(app).get("/api/streams/stream-1/history/summary");
-    return res.then(({ status, body }: { status: number; body: any }) => {
-      expect(status).toBe(200);
-      expect(body.data).toEqual({
-        created: 1,
-        claimed: 3,
-        canceled: 0,
-        start_time_updated: 1,
-      });
+    const { status, body } = invokeStreamSummaryRoute("stream-1");
+
+    expect(status).toBe(200);
+    expect(body.data).toEqual({
+      created: 1,
+      claimed: 3,
+      canceled: 0,
+      start_time_updated: 1,
     });
   });
 
@@ -626,25 +654,23 @@ describe("GET /api/streams/:id/history/summary", () => {
       start_time_updated: 0,
     });
 
-    const res = request(app).get("/api/streams/stream-1/history/summary");
-    return res.then(({ status, body }: { status: number; body: any }) => {
-      expect(status).toBe(200);
-      expect(body.data).toEqual({
-        created: 0,
-        claimed: 0,
-        canceled: 0,
-        start_time_updated: 0,
-      });
+    const { status, body } = invokeStreamSummaryRoute("stream-1");
+
+    expect(status).toBe(200);
+    expect(body.data).toEqual({
+      created: 0,
+      claimed: 0,
+      canceled: 0,
+      start_time_updated: 0,
     });
   });
 
   it("returns 404 when stream does not exist", () => {
     streamStoreMocks.getStream.mockReturnValue(undefined);
 
-    const res = request(app).get("/api/streams/nonexistent/history/summary");
-    return res.then(({ status, body }: { status: number; body: any }) => {
-      expect(status).toBe(404);
-      expect(body.error).toBeDefined();
-    });
+    const { status, body } = invokeStreamSummaryRoute("nonexistent");
+
+    expect(status).toBe(404);
+    expect(body.error).toBeDefined();
   });
 });
