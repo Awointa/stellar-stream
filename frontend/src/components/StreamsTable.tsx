@@ -33,6 +33,9 @@ function formatTimestamp(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleString();
 }
 
+type SortColumn = 'status' | 'amount' | 'vested' | 'startDate' | null;
+type SortDirection = 'asc' | 'desc' | null;
+
 export function StreamsTable({
   streams,
   filters,
@@ -42,11 +45,87 @@ export function StreamsTable({
   onOpenStream,
 }: StreamsTableProps) {
   const [expandedStreamId, setExpandedStreamId] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<SortColumn>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  
   const exportUrl = useMemo(() => getExportCsvUrl(filters as Record<string, string>), [filters]);
 
   const toggleTimeline = (streamId: string) => {
     setExpandedStreamId((prev) => (prev === streamId ? null : streamId));
   };
+
+  const handleHeaderClick = (column: SortColumn) => {
+    if (sortColumn === column) {
+      // Already sorting by this column
+      if (sortDirection === 'asc') {
+        // Switch to descending
+        setSortDirection('desc');
+      } else if (sortDirection === 'desc') {
+        // Reset to default
+        setSortColumn(null);
+        setSortDirection(null);
+      }
+    } else {
+      // New column, start with ascending
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // Sort streams based on current sort state
+  const sortedStreams = useMemo(() => {
+    if (!sortColumn || !sortDirection) {
+      return streams;
+    }
+
+    const sorted = [...streams];
+    
+    sorted.sort((a, b) => {
+      let valueA: number | string | Date;
+      let valueB: number | string | Date;
+
+      switch (sortColumn) {
+        case 'status': {
+          const statusOrder: Record<string, number> = {
+            active: 0,
+            scheduled: 1,
+            completed: 2,
+            canceled: 3,
+          };
+          valueA = statusOrder[a.progress.status] ?? 999;
+          valueB = statusOrder[b.progress.status] ?? 999;
+          break;
+        }
+        case 'amount': {
+          valueA = a.totalAmount;
+          valueB = b.totalAmount;
+          break;
+        }
+        case 'vested': {
+          valueA = a.progress.vestedAmount;
+          valueB = b.progress.vestedAmount;
+          break;
+        }
+        case 'startDate': {
+          valueA = a.startAt;
+          valueB = b.startAt;
+          break;
+        }
+        default:
+          return 0;
+      }
+
+      if (valueA < valueB) {
+        return sortDirection === 'asc' ? -1 : 1;
+      }
+      if (valueA > valueB) {
+        return sortDirection === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+
+    return sorted;
+  }, [streams, sortColumn, sortDirection]);
 
   return (
     <div className="card">
@@ -74,14 +153,71 @@ export function StreamsTable({
               <tr>
                 <th>ID</th>
                 <th>Route</th>
-                <th>Asset</th>
-                <th>Progress</th>
-                <th>Status</th>
+                <th>
+                  <button
+                    type="button"
+                    className="sort-header"
+                    onClick={() => handleHeaderClick('amount')}
+                    title="Click to sort by total amount"
+                  >
+                    Asset
+                    {sortColumn === 'amount' && sortDirection && (
+                      <span className="sort-icon">
+                        {sortDirection === 'asc' ? ' ▲' : ' ▼'}
+                      </span>
+                    )}
+                  </button>
+                  <div className="header-subtext">
+                    <button
+                      type="button"
+                      className="sort-header sort-header-sub"
+                      onClick={() => handleHeaderClick('startDate')}
+                      title="Click to sort by start date"
+                    >
+                      Start Date
+                      {sortColumn === 'startDate' && sortDirection && (
+                        <span className="sort-icon">
+                          {sortDirection === 'asc' ? ' ▲' : ' ▼'}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="sort-header"
+                    onClick={() => handleHeaderClick('vested')}
+                    title="Click to sort by vested amount"
+                  >
+                    Progress
+                    {sortColumn === 'vested' && sortDirection && (
+                      <span className="sort-icon">
+                        {sortDirection === 'asc' ? ' ▲' : ' ▼'}
+                      </span>
+                    )}
+                  </button>
+                </th>
+                <th>
+                  <button
+                    type="button"
+                    className="sort-header"
+                    onClick={() => handleHeaderClick('status')}
+                    title="Click to sort by status"
+                  >
+                    Status
+                    {sortColumn === 'status' && sortDirection && (
+                      <span className="sort-icon">
+                        {sortDirection === 'asc' ? ' ▲' : ' ▼'}
+                      </span>
+                    )}
+                  </button>
+                </th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {streams.map((stream) => {
+              {sortedStreams.map((stream) => {
                 const isScheduled = stream.progress.status === "scheduled";
                 const isFinalised =
                   stream.progress.status === "completed" ||

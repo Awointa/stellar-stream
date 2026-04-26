@@ -1026,3 +1026,39 @@ td {
   font-size: 1.1rem;
   line-height: 1;
 }
+
+/* ── Sortable table headers ────────────────────────────── */
+
+.sort-header {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: inherit;
+  font-weight: inherit;
+  padding: 0;
+  text-align: left;
+  white-space: nowrap;
+  transition: color 0.12s;
+}
+
+.sort-header:hover {
+  color: #0ea5a5;
+}
+
+.sort-header-sub {
+  display: block;
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 0.2rem;
+}
+
+.sort-header-sub:hover {
+  color: #0ea5a5;
+}
+
+.sort-icon {
+  font-weight: bold;
+  color: #0ea5a5;
+  display: inline-block;
+}
