@@ -21,7 +21,7 @@ import {
 } from "./services/eventHistory";
 import { fetchOpenIssues } from "./services/openIssues";
 import { initIndexer, startIndexer, getCircuitBreakerStatus } from "./services/indexer";
-import { register as metricsRegistry } from "./services/metrics";
+
 import { startReconciliationJob } from "./services/reconciliationJob";
 import { startWebhookWorker } from "./services/webhookWorker";
 import { getDeadLetters, countDeadLetters } from "./services/webhook";
@@ -189,10 +189,7 @@ app.get("/api/assets", (_req: Request, res: Response) => {
   });
 });
 
-app.get("/api/config", (_req: Request, res: Response) => {
-  res.json({
-    allowedAssets: ALLOWED_ASSETS,
-  });
+
 });
 
 app.get("/api/streams", (req: Request, res: Response) => {
