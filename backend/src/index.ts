@@ -778,6 +778,22 @@ app.get("/api/streams/:id/history", (req: Request, res: Response) => {
   res.json({ data, total, limit, offset });
 });
 
+app.get("/api/streams/:id/history/summary", (req: Request, res: Response) => {
+  const parsedId = parseStreamId(req.params.id);
+  if (!parsedId.ok) {
+    sendValidationError(req, res, parsedId.issues);
+    return;
+  }
+
+  const stream = getStream(parsedId.value);
+  if (!stream) {
+    sendApiError(req, res, 404, "Stream not found.", { code: "NOT_FOUND" });
+    return;
+  }
+
+  res.json({ data: getStreamEventSummary(parsedId.value) });
+});
+
 app.get("/api/streams/:id/snapshot", (req: Request, res: Response) => {
   const parsedId = parseStreamId(req.params.id);
   if (!parsedId.ok) {
