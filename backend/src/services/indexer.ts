@@ -237,6 +237,7 @@ function processEvent(db: any, event: rpc.Api.EventResponse): void {
             startTime: value.start_time,
             endTime: value.end_time,
           },
+          event.ledger,
         );
         break;
 
@@ -248,6 +249,8 @@ function processEvent(db: any, event: rpc.Api.EventResponse): void {
           timestamp,
           value.recipient,
           value.amount,
+          undefined,
+          event.ledger,
         );
         break;
 
@@ -258,6 +261,9 @@ function processEvent(db: any, event: rpc.Api.EventResponse): void {
           "canceled",
           timestamp,
           value.sender,
+          undefined,
+          undefined,
+          event.ledger,
         );
         break;
     }
