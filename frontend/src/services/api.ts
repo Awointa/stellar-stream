@@ -205,11 +205,18 @@ export async function getStream(streamId: string): Promise<Stream> {
   return body.data;
 }
 
-export interface AppConfig {
-  allowedAssets: string[];
+export interface MetricsHistoryParams {
+  startTimestamp: number;
+  endTimestamp: number;
 }
 
-export async function getConfig(): Promise<AppConfig> {
-  const response = await fetch(`${API_BASE}/config`);
-  return parseResponse<AppConfig>(response);
+export async function fetchMetricsHistory(params: MetricsHistoryParams): Promise<any[]> {
+  const searchParams = new URLSearchParams({
+    start: params.startTimestamp.toString(),
+    end: params.endTimestamp.toString(),
+  });
+  
+  const response = await fetch(`${API_BASE}/metrics/history?${searchParams}`);
+  const body = await parseResponse<{ data: any[] }>(response);
+  return body.data;
 }
