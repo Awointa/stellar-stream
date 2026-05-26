@@ -578,6 +578,70 @@ describe("Backend Integration Tests", () => {
         expect(response.status).toBe(404);
         expect(response.body.error).toBe("Stream not found.");
       });
+
+      it("should record stream_completed event when stream fully vests", async () => {
+        const db = getDb();
+        const now = Math.floor(Date.now() / 1000);
+
+        // Create a stream that has already completed
+        const completedStream = {
+          id: "completed-test",
+          sender: "GC7Y4M77LNYKYF4K4V5A737W3G3L3T7XQWZJZL4R64Z43W3T7XZQK2L4",
+          recipient: "GB4Z3ZK3X24Z3T7XZQK2L4R64Z43W3T7XZQK2L4R64Z43W3T7XZQK2L4",
+          asset_code: "USDC",
+          total_amount: 1000,
+          duration_seconds: 3600,
+          start_at: now - 7200, // Started 2 hours ago
+          created_at: now - 7200,
+          canceled_at: null,
+          completed_at: null,
+          refunded_amount: null,
+          archived_at: null,
+          paused_at: null,
+          paused_duration: 0,
+        };
+
+        db.prepare(`
+          INSERT INTO streams (id, sender, recipient, asset_code, total_amount, duration_seconds, start_at, created_at, canceled_at, completed_at, refunded_amount, archived_at, paused_at, paused_duration)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          completedStream.id,
+          completedStream.sender,
+          completedStream.recipient,
+          completedStream.asset_code,
+          completedStream.total_amount,
+          completedStream.duration_seconds,
+          completedStream.start_at,
+          completedStream.created_at,
+          completedStream.canceled_at,
+          completedStream.completed_at,
+          completedStream.refunded_amount,
+          completedStream.archived_at,
+          completedStream.paused_at,
+          completedStream.paused_duration,
+        );
+
+        // Record created event
+        db.prepare(`
+          INSERT INTO stream_events (stream_id, event_type, timestamp, actor)
+          VALUES (?, ?, ?, ?)
+        `).run(completedStream.id, "created", completedStream.created_at, completedStream.sender);
+
+        // Call refreshStreamStatuses to mark stream as completed and record event
+        const { refreshStreamStatuses } = await import("../services/streamStore");
+        refreshStreamStatuses();
+
+        // Verify stream is marked as completed
+        const response = await request(app)
+          .get(`/api/streams/${completedStream.id}/history`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data).toHaveLength(2);
+
+        const completedEvent = response.body.data.find((e: any) => e.eventType === "completed");
+        expect(completedEvent).toBeDefined();
+        expect(completedEvent.streamId).toBe(completedStream.id);
+      });
     });
 
     describe("GET /api/streams/:id/snapshot", () => {
