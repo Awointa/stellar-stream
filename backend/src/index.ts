@@ -42,6 +42,8 @@ import {
   cancelStream,
   createStream,
   getStream,
+  getOnChainClaimableAmount,
+  getLatestLedgerTime,
   initSoroban,
   listStreams,
   listStreamsByRecipient,
@@ -187,6 +189,25 @@ const readLimiter = rateLimit({
 const mutationLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: MUTATION_RATE_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req: Request, res: Response) => {
+    const resetTime = (req as any).rateLimit?.resetTime;
+    const retryAfter = resetTime
+      ? Math.ceil((resetTime.getTime() - Date.now()) / 1000)
+      : 60;
+    res.set("Retry-After", String(Math.max(1, retryAfter)));
+    sendApiError(req, res, 429, "Too many requests. Please try again later.", {
+      code: "RATE_LIMIT_EXCEEDED",
+    });
+  },
+});
+
+const CLAIMABLE_RATE_LIMIT = Number(process.env.CLAIMABLE_RATE_LIMIT ?? 30);
+
+const claimableLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: CLAIMABLE_RATE_LIMIT,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req: Request, res: Response) => {
@@ -501,13 +522,7 @@ app.get("/api/streams/:id", readLimiter, (req: Request, res: Response) => {
   });
 });
 
-app.get(
-  "/api/recipients/:accountId/streams",
-  readLimiter,
-  (req: Request, res: Response) => {
-    const parsedParams = recipientAccountIdSchema.safeParse({
-      accountId: req.params.accountId,
-    });
+
 
     if (!parsedParams.success) {
       sendValidationError(req, res, parsedParams.error.issues);

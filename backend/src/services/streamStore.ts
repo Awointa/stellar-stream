@@ -386,6 +386,7 @@ export function calculateProgress(
     stream.pausedAt !== undefined ? Math.min(at, stream.pausedAt) : at;
 
 
+
   const ratio = Math.min(1, elapsed / stream.durationSeconds);
   const vestedAmount = stream.totalAmount * ratio;
 
@@ -399,13 +400,46 @@ export function calculateProgress(
   };
 }
 
-/**
- * Syncs all on-chain streams from Soroban contract to local SQLite database.
- * Fetches streams in parallel (max 5 concurrent RPC calls) with fallback to sequential.
- * Updates existing streams and inserts new ones.
- * @async
- * @returns {Promise<void>}
- */
+export async function getOnChainClaimableAmount(
+  id: string,
+): Promise<{ claimableAmount: number; at: number }> {
+  const sorobanContext = getSorobanContext();
+  if (!sorobanContext || !rpcServer) {
+    throw new Error("Soroban RPC server is not initialized.");
+  }
+
+  const sourceAccount = await sorobanContext.sourceAccountPromise;
+  const latestLedger = await rpcServer.getLatestLedger();
+  const at = latestLedger.closeTime ? parseInt(latestLedger.closeTime, 10) : Math.floor(Date.now() / 1000);
+
+  const simRes = await simulateContractCall(
+    sorobanContext.contract,
+    sourceAccount,
+    "claimable",
+    nativeToScVal(parseInt(id), { type: "u64" }),
+    nativeToScVal(at, { type: "u64" }),
+  );
+
+  if (!rpc.Api.isSimulationSuccess(simRes) || !simRes.result) {
+    throw new Error("Simulation failed: " + JSON.stringify(simRes));
+  }
+
+  const claimableAmount = Number(scValToNative(simRes.result.retval));
+  return { claimableAmount, at };
+}
+
+export async function getLatestLedgerTime(): Promise<number> {
+  if (!rpcServer) {
+    return Math.floor(Date.now() / 1000);
+  }
+  try {
+    const latestLedger = await rpcServer.getLatestLedger();
+    return latestLedger.closeTime ? parseInt(latestLedger.closeTime, 10) : Math.floor(Date.now() / 1000);
+  } catch (e) {
+    return Math.floor(Date.now() / 1000);
+  }
+}
+
 export async function syncStreams() {
   const sorobanContext = getSorobanContext();
   if (!sorobanContext) return;
@@ -911,7 +945,6 @@ export async function cancelStream(
   triggerWebhook("canceled", stream);
   return stream;
 }
-
 
 
 /**
