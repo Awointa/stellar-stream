@@ -112,7 +112,7 @@ export function EditStartTimeModal({
     }
     const nowSec = Math.floor(Date.now() / 1000);
     if (ts < nowSec + 60) {
-      setFieldError("Start time must be at least 60 seconds in the future.");
+      setFieldError("Start time must be in the future (at least 60 seconds).");
       return null;
     }
     return ts;
