@@ -28,7 +28,7 @@ export enum CircuitState {
   HALF_OPEN = "HALF_OPEN",
 }
 
-class CircuitBreaker {
+export class CircuitBreaker {
   private state: CircuitState = CircuitState.CLOSED;
   private failureCount: number = 0;
   private lastFailureTime: number = 0;
@@ -158,6 +158,7 @@ async function indexEvents(): Promise<void> {
     const latestLedger = await rpcServer.getLatestLedger();
     const currentLedger = latestLedger.sequence;
 
+
     if (currentLedger <= lastProcessedLedger) {
       circuitBreaker.onSuccess();
       return;
@@ -185,6 +186,7 @@ async function indexEvents(): Promise<void> {
       }
 
       lastProcessedLedger = currentLedger;
+
     })();
 
     ledgersScannedTotal.inc(currentLedger - startLedger);
@@ -226,6 +228,7 @@ function processEvent(db: any, event: rpc.Api.EventResponse): void {
             startTime: value.start_time,
             endTime: value.end_time,
           },
+          event.ledger,
         );
         break;
 
@@ -237,6 +240,8 @@ function processEvent(db: any, event: rpc.Api.EventResponse): void {
           timestamp,
           value.recipient,
           value.amount,
+          undefined,
+          event.ledger,
         );
         break;
 
@@ -247,6 +252,9 @@ function processEvent(db: any, event: rpc.Api.EventResponse): void {
           "canceled",
           timestamp,
           value.sender,
+          undefined,
+          undefined,
+          event.ledger,
         );
         break;
     }
