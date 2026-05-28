@@ -322,7 +322,7 @@ app.get("/api/assets", (_req: Request, res: Response) => {
   });
 });
 
-app.get("/api/streams", readLimiter, (req: Request, res: Response) => {
+
   const parsedQuery = listStreamsQuerySchema.safeParse(req.query);
   if (!parsedQuery.success) {
     sendValidationError(req, res, parsedQuery.error.issues);
@@ -645,41 +645,6 @@ app.get(
       page,
       limit,
     });
-  },
-);
-
-app.get(
-  "/api/auth/challenge",
-  authChallengeLimiter,
-  (req: Request, res: Response) => {
-    const accountId = req.query.accountId;
-    if (typeof accountId !== "string" || !accountId.trim()) {
-      sendApiError(req, res, 400, "accountId query parameter is required.", {
-        code: "VALIDATION_ERROR",
-      });
-      return;
-    }
-
-    try {
-      const challengeTransaction = generateChallenge(accountId.trim());
-      res.json({ transaction: challengeTransaction });
-    } catch (error: any) {
-      const normalizedError = normalizeUnknownApiError(
-        error,
-        "Failed to generate challenge.",
-      );
-      sendApiError(
-        req,
-        res,
-        normalizedError.statusCode,
-        normalizedError.message,
-        {
-          code: normalizedError.code ?? "INTERNAL_ERROR",
-        },
-      );
-    }
-  },
-);
 
 app.post("/api/auth/token", async (req: Request, res: Response) => {
   const transaction = req.body?.transaction;
@@ -694,19 +659,7 @@ app.post("/api/auth/token", async (req: Request, res: Response) => {
     const token = await verifyChallengeAndIssueToken(transaction);
     res.json({ token });
   } catch (error: any) {
-    const normalizedError = normalizeUnknownApiError(
-      error,
-      "Failed to verify challenge.",
-    );
-    sendApiError(
-      req,
-      res,
-      normalizedError.statusCode,
-      normalizedError.message,
-      {
-        code: normalizedError.code ?? "INTERNAL_ERROR",
-      },
-    );
+
   }
 });
 
@@ -999,16 +952,7 @@ app.patch(
     }
 
     const user = (req as any).user;
-    if (existingStream.sender !== user.accountId) {
-      sendApiError(
-        req,
-        res,
-        403,
-        "Only the sender can update the start time.",
-        {
-          code: "FORBIDDEN",
-        },
-      );
+
       return;
     }
 
@@ -1019,25 +963,7 @@ app.patch(
     }
 
     try {
-      const updated = updateStreamStartAt(
-        parsedId.value,
-        parsedBody.data.startAt,
-      );
-      res.json({ data: { ...updated, progress: calculateProgress(updated) } });
-    } catch (error: any) {
-      const normalizedError = normalizeUnknownApiError(
-        error,
-        "Failed to update start time.",
-      );
-      sendApiError(
-        req,
-        res,
-        normalizedError.statusCode,
-        normalizedError.message,
-        {
-          code: normalizedError.code ?? "INTERNAL_ERROR",
-        },
-      );
+
     }
   },
 );
