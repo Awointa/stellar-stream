@@ -30,6 +30,10 @@ interface StreamsTableProps {
   onResume: (streamId: string) => Promise<void>;
   onOpenStream?: (streamId: string) => void;
   onEditStartTime: (stream: Stream, triggerRef: RefObject<HTMLButtonElement | null>) => void;
+  // Optional props expected by App.tsx
+  totalStreamCount?: number;
+  onCreateStream?: () => void;
+
 }
 
 const SKELETON_ROW_COUNT = 6;
