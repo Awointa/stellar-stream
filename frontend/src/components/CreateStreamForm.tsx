@@ -17,6 +17,11 @@ interface CreateStreamFormProps {
   walletAddress?: string | null;
 }
 
+/**
+ * Converts raw API error messages into user-friendly titles and hints.
+ * @param raw - The raw error message from the API.
+ * @returns An object containing a friendly title and hint.
+ */
 function humaniseApiError(raw: string): { title: string; hint: string } {
   const lower = raw.toLowerCase();
 
@@ -45,7 +50,7 @@ function humaniseApiError(raw: string): { title: string; hint: string } {
   if (lower.includes("duration") || lower.includes("seconds")) {
     return {
       title: "Invalid duration",
-      hint: "Stream duration must be at least 1 hour (3 600 seconds). Increase the duration and try again.",
+      hint: "Stream duration must be at least 1 minute (60 seconds). Increase the duration and try again.",
     };
   }
   if (lower.includes("not found")) {
@@ -64,6 +69,11 @@ function humaniseApiError(raw: string): { title: string; hint: string } {
   return { title: "Something went wrong", hint: raw };
 }
 
+/**
+ * Displays a validation hint for a Stellar account ID.
+ * @param props - The component props containing the account address.
+ * @returns The rendered AccountHint component.
+ */
 function AccountHint({ value }: { value: string }) {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
@@ -109,6 +119,13 @@ const INITIAL_VALUES: FormValues = {
 // Initial fallback if fetch hasn't completed or failed
 const DEFAULT_ALLOWED_ASSETS = ["USDC", "XLM"];
 
+/**
+ * Form component for creating a new payment stream.
+ * Includes validation, draft autosave, and estimated end date calculation.
+ * 
+ * @param props - The component props.
+ * @returns The rendered CreateStreamForm component.
+ */
 export function CreateStreamForm({
   onCreate,
   apiError,
@@ -198,22 +215,22 @@ export function CreateStreamForm({
   const parsedApiError = apiError ? humaniseApiError(apiError) : null;
 
   const startInMinsNum = Number(values.startInMinutes);
-  const durationHoursNum = Number(values.durationHours);
+  const durationMinutesNum = Number(values.durationMinutes);
   const estimatedEndLabel: string | null = (() => {
     if (
       values.startInMinutes === "" ||
-      values.durationHours === "" ||
+      values.durationMinutes === "" ||
       isNaN(startInMinsNum) ||
-      isNaN(durationHoursNum) ||
-      durationHoursNum < 1 ||
-      !Number.isInteger(durationHoursNum)
+      isNaN(durationMinutesNum) ||
+      durationMinutesNum < 1 ||
+      !Number.isInteger(durationMinutesNum)
     ) {
       return null;
     }
     const nowSeconds = Math.floor(Date.now() / 1000);
     const startAt =
       startInMinsNum > 0 ? nowSeconds + Math.floor(startInMinsNum * 60) : nowSeconds;
-    const endAt = startAt + Math.floor(durationHoursNum * 3600);
+    const endAt = startAt + Math.floor(durationMinutesNum * 60);
     const endDate = new Date(endAt * 1000);
     const datePart = new Intl.DateTimeFormat("en-US", {
       month: "short",

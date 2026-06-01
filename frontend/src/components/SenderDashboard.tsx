@@ -10,6 +10,11 @@ interface SenderDashboardProps {
   onEditStartTime: (stream: Stream) => void;
 }
 
+/**
+ * Returns the CSS class for a stream status badge.
+ * @param status - The progress status of the stream.
+ * @returns A string containing the CSS classes.
+ */
 function statusClass(status: Stream["progress"]["status"]): string {
   switch (status) {
     case "active":
@@ -27,6 +32,13 @@ function statusClass(status: Stream["progress"]["status"]): string {
   }
 }
 
+/**
+ * Dashboard for users who are sending streams.
+ * Displays active/scheduled streams, historical streams, and a creation form.
+ * 
+ * @param props - The component props.
+ * @returns The rendered SenderDashboard component.
+ */
 export function SenderDashboard({ senderAddress, onEditStartTime }: SenderDashboardProps) {
   const [streams, setStreams] = useState<Stream[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,13 +101,19 @@ export function SenderDashboard({ senderAddress, onEditStartTime }: SenderDashbo
     return acc;
   }, {} as Record<string, number>), [streams]);
 
+  /**
+   * Handles the creation of a new stream.
+   * Ensures the dashboard is refreshed before closing the form.
+   * 
+   * @param payload - The data for the new stream.
+   */
   const handleCreate = async (payload: CreateStreamPayload) => {
     setCreateError(null);
     try {
       await createStream(payload);
-      setShowCreateForm(false);
       const data = await listStreams({ sender: senderAddress! });
       setStreams(data);
+      setShowCreateForm(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to create stream.";
       setCreateError(msg);

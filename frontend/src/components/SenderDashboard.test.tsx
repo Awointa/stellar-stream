@@ -107,6 +107,12 @@ describe("SenderDashboard", () => {
 
     await waitFor(() => expect(screen.getByText("No Streams Found")).toBeInTheDocument());
     expect(screen.getByText("Create your first stream")).toBeInTheDocument();
+
+    // Verify metrics are absent in the empty state
+    expect(screen.queryByText(/Total .* Outgoing/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Active")).not.toBeInTheDocument();
+    expect(screen.queryByText("Scheduled")).not.toBeInTheDocument();
+    expect(screen.queryByText("Completed")).not.toBeInTheDocument();
   });
 
   it("shows CreateStreamForm when 'Create Stream' button is clicked", async () => {
