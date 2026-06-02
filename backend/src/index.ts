@@ -75,7 +75,8 @@ import {
 } from "./validation/schemas";
 import { validateEnv } from "./config/validateEnv";
 import { getMetricsHistory } from "./services/metricsHistory";
-import { initCache, getCache } from "./services/cache";
+import { initCache } from "./services/cache";
+import { logger } from "./logger";
 
 const STREAM_STATUSES: StreamStatus[] = [
   "scheduled",
@@ -322,7 +323,7 @@ app.get(
       const data = await getMetricsHistory(days);
       res.json({ data });
     } catch (error: any) {
-      console.error("Failed to fetch metrics history:", error);
+      logger.error({ err: error }, "failed to fetch metrics history");
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to fetch metrics history.",
@@ -540,7 +541,7 @@ app.post(
       const { amounts, at } = await getOnChainClaimableBatch(parsed.data.streamIds);
       res.json({ amounts, at });
     } catch (error: unknown) {
-      console.error("Failed to simulate claimable batch:", error);
+      logger.error({ err: error }, "failed to simulate claimable batch");
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to simulate claimable amounts.",
@@ -944,7 +945,7 @@ app.post(
       const estimate = await estimateCreateStreamFee(parsedBody.data);
       res.json({ data: estimate });
     } catch (error: any) {
-      console.error("Failed to estimate stream creation fee:", error);
+      logger.error({ err: error }, "failed to estimate stream creation fee");
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to estimate network fee.",
@@ -984,7 +985,7 @@ app.post(
         },
       });
     } catch (error: any) {
-      console.error("Failed to create stream:", error);
+      logger.error({ err: error }, "failed to create stream");
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to create stream.",
@@ -1036,7 +1037,7 @@ app.post(
         },
       });
     } catch (error: any) {
-      console.error("Failed to cancel stream:", error);
+      logger.error({ err: error, streamId: parsedId.value }, "failed to cancel stream");
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to cancel stream.",
@@ -1213,7 +1214,7 @@ app.post(
         history,
       });
     } catch (error: any) {
-      console.error("Failed to record claim:", error);
+      logger.error({ err: error }, "failed to record claim");
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to process claim.",
@@ -1374,7 +1375,7 @@ app.get("/api/open-issues", async (req: Request, res: Response) => {
     const data = await fetchOpenIssues();
     res.json({ data });
   } catch (error: any) {
-    console.error("Failed to fetch open issues from proxy:", error);
+    logger.error({ err: error }, "failed to fetch open issues from proxy");
     const normalizedError = normalizeUnknownApiError(
       error,
       "Failed to fetch open issues.",
@@ -1432,7 +1433,7 @@ app.get(
         limit,
       });
     } catch (error: any) {
-      console.error("Failed to fetch dead-letter webhooks:", error);
+      logger.error({ err: error }, "failed to fetch dead-letter webhooks");
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to fetch dead-letter webhooks.",
@@ -1458,7 +1459,7 @@ app.get(
       const total = countDeadLetters();
       res.json({ total });
     } catch (error: any) {
-      console.error("Failed to count dead-letter webhooks:", error);
+      logger.error({ err: error }, "failed to count dead-letter webhooks");
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to count dead-letter webhooks.",
@@ -1498,7 +1499,7 @@ app.post(
       }
       res.json({ success: true, message: "Webhook re-queued successfully" });
     } catch (error: any) {
-      console.error("Failed to re-queue dead-letter webhook:", error);
+      logger.error({ err: error, deadLetterId: id }, "failed to re-queue dead-letter webhook");
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to re-queue dead-letter webhook.",
@@ -1529,18 +1530,19 @@ async function startServer() {
     startIndexer(config.indexerPollIntervalMs);
     startReconciliationJob(config.reconciliationIntervalMs);
   } else {
-    console.warn("CONTRACT_ID not set, event indexer will not start");
+    logger.warn("CONTRACT_ID not set, event indexer will not start");
   }
 
   app.listen(config.port, () => {
-    console.log(
-      `StellarStream API listening on http://localhost:${config.port}`,
-    );
+    logger.info({ port: config.port }, "StellarStream API listening");
   });
 }
 
 if (require.main === module) {
-  startServer().catch(console.error);
+  startServer().catch((err) => {
+    logger.error({ err }, "failed to start server");
+    process.exit(1);
+  });
 }
 
 app.delete("/api/streams/:id", adminAuth, (req: Request, res: Response) => {
@@ -1560,7 +1562,7 @@ app.delete("/api/streams/:id", adminAuth, (req: Request, res: Response) => {
 
     res.status(204).send();
   } catch (error: any) {
-    console.error("Failed to delete stream:", error);
+    logger.error({ err: error, streamId: parsedId.value }, "failed to delete stream");
     const normalizedError = normalizeUnknownApiError(
       error,
       "Failed to delete stream.",
