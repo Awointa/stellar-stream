@@ -345,7 +345,7 @@ app.get("/api/assets", (_req: Request, res: Response) => {
   });
 });
 
-
+app.get("/api/streams", readLimiter, (req: Request, res: Response) => {
   const parsedQuery = listStreamsQuerySchema.safeParse(req.query);
   if (!parsedQuery.success) {
     sendValidationError(req, res, parsedQuery.error.issues);
@@ -720,6 +720,8 @@ app.get(
       page,
       limit,
     });
+  },
+);
 
 app.post("/api/auth/token", async (req: Request, res: Response) => {
   const transaction = req.body?.transaction;
@@ -733,8 +735,8 @@ app.post("/api/auth/token", async (req: Request, res: Response) => {
   try {
     const token = await verifyChallengeAndIssueToken(transaction);
     res.json({ token });
-  } catch (error: any) {
-
+  } catch (_error: unknown) {
+    sendApiError(req, res, 401, "Authentication failed.", { code: "AUTH_ERROR" });
   }
 });
 
@@ -1061,11 +1063,6 @@ app.patch(
       return;
     }
 
-    const user = (req as any).user;
-
-      return;
-    }
-
     const parsedBody = updateStreamStartAtSchema.safeParse(req.body);
     if (!parsedBody.success) {
       sendValidationError(req, res, parsedBody.error.issues);
@@ -1073,7 +1070,13 @@ app.patch(
     }
 
     try {
-
+      const updated = updateStreamStartAt(parsedId.value, parsedBody.data.startAt);
+      res.json({ data: updated });
+    } catch (error: unknown) {
+      const normalizedError = normalizeUnknownApiError(error, "Failed to update stream start time.");
+      sendApiError(req, res, normalizedError.statusCode, normalizedError.message, {
+        code: normalizedError.code ?? "INTERNAL_ERROR",
+      });
     }
   },
 );

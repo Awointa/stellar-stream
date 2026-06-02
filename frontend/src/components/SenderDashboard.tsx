@@ -74,6 +74,16 @@ export function SenderDashboard({ senderAddress, onEditStartTime }: SenderDashbo
     };
   }, [senderAddress]);
 
+  const activeStreams = useMemo(() => streams.filter((s) => s.progress.status === "active"), [streams]);
+  const scheduledStreams = useMemo(() => streams.filter((s) => s.progress.status === "scheduled"), [streams]);
+  const completedStreams = useMemo(() => streams.filter(
+    (s) => s.progress.status === "completed" || s.progress.status === "canceled"
+  ), [streams]);
+  const totalsByAsset = useMemo(() => streams.reduce((acc, s) => {
+    acc[s.assetCode] = (acc[s.assetCode] || 0) + s.totalAmount;
+    return acc;
+  }, {} as Record<string, number>), [streams]);
+
   if (!senderAddress) {
     return (
       <div className="card recipient-dashboard-card">
@@ -114,18 +124,6 @@ export function SenderDashboard({ senderAddress, onEditStartTime }: SenderDashbo
       </div>
     );
   }
-
-  const activeStreams = useMemo(() => streams.filter((s) => s.progress.status === "active"), [streams]);
-  const scheduledStreams = useMemo(() => streams.filter((s) => s.progress.status === "scheduled"), [streams]);
-  const completedStreams = useMemo(() => streams.filter(
-    (s) => s.progress.status === "completed" || s.progress.status === "canceled"
-  ), [streams]);
-
-  // Group totals by asset for accuracy
-  const totalsByAsset = useMemo(() => streams.reduce((acc, s) => {
-    acc[s.assetCode] = (acc[s.assetCode] || 0) + s.totalAmount;
-    return acc;
-  }, {} as Record<string, number>), [streams]);
 
   if (streams.length === 0) {
     return (

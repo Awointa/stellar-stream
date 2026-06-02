@@ -417,16 +417,10 @@ export function calculateProgress(
   stream: StreamRecord,
   at = nowInSeconds(),
 ): StreamProgress {
-
-  }
-
-  const streamEnd = stream.startAt + stream.durationSeconds;
-
   // When paused, vesting is frozen at the moment of pause.
   const effectiveAt =
     stream.pausedAt !== undefined ? Math.min(at, stream.pausedAt) : at;
-
-
+  const elapsed = Math.max(0, effectiveAt - stream.startAt - stream.pausedDuration);
 
   const ratio = Math.min(1, elapsed / stream.durationSeconds);
   const vestedAmount = stream.totalAmount * ratio;
@@ -997,7 +991,6 @@ export async function cancelStream(
   // Attempt to get refund amount from on-chain cancel transaction.
   // For now, we extract from potential on-chain response. In production,
   // this would send an actual cancel_stream transaction to the contract.
-  let refundAmount: number | undefined = undefined;
   try {
     const sorobanContext = getSorobanContext();
     if (sorobanContext && rpcServer && serverKeypair) {
@@ -1035,8 +1028,7 @@ export async function cancelStream(
           }
 
           if (txResult?.status === "SUCCESS" && txResult.returnValue) {
-            refundAmount = Number(scValToNative(txResult.returnValue));
-            stream.refundedAmount = refundAmount;
+            stream.refundedAmount = Number(scValToNative(txResult.returnValue));
           }
         }
       }

@@ -389,12 +389,6 @@ describe("GET /api/senders/:accountId/streams", () => {
     expect(body.total).toBe(2);
   });
 
-
-
-    expect(status).toBe(200);
-    expect(body.total).toBe(2);
-  });
-
   it("returns 400 for invalid account ID", () => {
     const { status, body } = invokeSenderStreamsRoute("invalid_account");
 

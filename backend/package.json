@@ -7,7 +7,8 @@
     "dev": "ts-node-dev --respawn src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest"
+    "test": "vitest",
+    "lint": "eslint src"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^14.5.0",
@@ -25,6 +26,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
@@ -36,9 +38,11 @@
     "@types/ws": "^8.5.10",
     "@vitest/coverage-v8": "^1.0.0",
     "autocannon": "^8.0.0",
+    "eslint": "^10.4.1",
     "supertest": "^7.0.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.2.2",
+    "typescript-eslint": "^8.60.1",
     "vitest": "^1.0.0"
   }
 }
