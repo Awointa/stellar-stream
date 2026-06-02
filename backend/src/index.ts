@@ -53,6 +53,7 @@ import {
   estimateCreateStreamFee,
   refreshStreamStatuses,
   resumeStream,
+  StreamRecord,
   StreamStatus,
   syncStreams,
   updateStreamStartAt,
@@ -346,7 +347,7 @@ app.get("/api/assets", (_req: Request, res: Response) => {
   });
 });
 
-
+app.get("/api/streams", readLimiter, (req: Request, res: Response) => {
   const parsedQuery = listStreamsQuerySchema.safeParse(req.query);
   if (!parsedQuery.success) {
     sendValidationError(req, res, parsedQuery.error.issues);
@@ -556,6 +557,189 @@ app.post(
   },
 );
 
+async function withAddressCache(
+  key: string,
+  fetcher: () => StreamRecord[],
+): Promise<StreamRecord[]> {
+  try {
+    const cache = getCache();
+    const cached = await cache.get<StreamRecord[]>(key);
+    if (cached) return cached;
+    const data = fetcher();
+    await cache.set(key, data, 5);
+    return data;
+  } catch {
+    return fetcher();
+  }
+}
+
+app.get(
+  "/api/streams/sender/:address",
+  readLimiter,
+  async (req: Request, res: Response) => {
+    const parsedParams = senderAccountIdSchema.safeParse({
+      accountId: req.params.address,
+    });
+
+    if (!parsedParams.success) {
+      sendValidationError(req, res, parsedParams.error.issues);
+      return;
+    }
+
+    const address = parsedParams.data.accountId;
+
+    const parsedQuery = listStreamsQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      sendValidationError(req, res, parsedQuery.error.issues);
+      return;
+    }
+    const query = parsedQuery.data;
+
+    const rawStreams = await withAddressCache(
+      `streams:sender:${address}`,
+      () => listStreamsBySender(address),
+    );
+
+    let data = rawStreams.map((stream) => ({
+      ...stream,
+      progress: calculateProgress(stream),
+    }));
+
+    if (query.status) {
+      data = data.filter((stream) => stream.progress.status === query.status);
+    }
+    if (query.recipient) {
+      data = data.filter(
+        (stream) =>
+          stream.recipient.toLowerCase() === query.recipient!.toLowerCase(),
+      );
+    }
+    if (query.asset) {
+      data = data.filter(
+        (stream) =>
+          stream.assetCode.toLowerCase() === query.asset!.toLowerCase(),
+      );
+    }
+    if (query.assetCode && query.assetCode.length > 0) {
+      data = data.filter((stream) =>
+        query.assetCode!.includes(stream.assetCode.toUpperCase()),
+      );
+    }
+    if (query.q && query.q.length > 0) {
+      const searchTerm = query.q.toLowerCase();
+      data = data.filter(
+        (stream) =>
+          stream.id.toLowerCase().includes(searchTerm) ||
+          stream.sender.toLowerCase().includes(searchTerm) ||
+          stream.recipient.toLowerCase().includes(searchTerm) ||
+          stream.assetCode.toLowerCase().includes(searchTerm),
+      );
+    }
+    if (query.minAmount !== undefined) {
+      data = data.filter((stream) => stream.totalAmount >= query.minAmount!);
+    }
+    if (query.maxAmount !== undefined) {
+      data = data.filter((stream) => stream.totalAmount <= query.maxAmount!);
+    }
+
+    const hasPage = req.query.page !== undefined;
+    const hasLimit = req.query.limit !== undefined;
+
+    const total = data.length;
+    const page = query.page ?? PAGINATION_DEFAULT_PAGE;
+    const limit =
+      !hasPage && !hasLimit ? total : (query.limit ?? PAGINATION_DEFAULT_LIMIT);
+
+    const offset = (page - 1) * limit;
+    const paginatedData = data.slice(offset, offset + limit);
+
+    res.json({ data: paginatedData, total, page, limit });
+  },
+);
+
+app.get(
+  "/api/streams/recipient/:address",
+  readLimiter,
+  async (req: Request, res: Response) => {
+    const parsedParams = recipientAccountIdSchema.safeParse({
+      accountId: req.params.address,
+    });
+
+    if (!parsedParams.success) {
+      sendValidationError(req, res, parsedParams.error.issues);
+      return;
+    }
+
+    const address = parsedParams.data.accountId;
+
+    const parsedQuery = listStreamsQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      sendValidationError(req, res, parsedQuery.error.issues);
+      return;
+    }
+    const query = parsedQuery.data;
+
+    const rawStreams = await withAddressCache(
+      `streams:recipient:${address}`,
+      () => listStreamsByRecipient(address),
+    );
+
+    let data = rawStreams.map((stream) => ({
+      ...stream,
+      progress: calculateProgress(stream),
+    }));
+
+    if (query.status) {
+      data = data.filter((stream) => stream.progress.status === query.status);
+    }
+    if (query.sender) {
+      data = data.filter(
+        (stream) => stream.sender.toLowerCase() === query.sender!.toLowerCase(),
+      );
+    }
+    if (query.asset) {
+      data = data.filter(
+        (stream) =>
+          stream.assetCode.toLowerCase() === query.asset!.toLowerCase(),
+      );
+    }
+    if (query.assetCode && query.assetCode.length > 0) {
+      data = data.filter((stream) =>
+        query.assetCode!.includes(stream.assetCode.toUpperCase()),
+      );
+    }
+    if (query.q && query.q.length > 0) {
+      const searchTerm = query.q.toLowerCase();
+      data = data.filter(
+        (stream) =>
+          stream.id.toLowerCase().includes(searchTerm) ||
+          stream.sender.toLowerCase().includes(searchTerm) ||
+          stream.recipient.toLowerCase().includes(searchTerm) ||
+          stream.assetCode.toLowerCase().includes(searchTerm),
+      );
+    }
+    if (query.minAmount !== undefined) {
+      data = data.filter((stream) => stream.totalAmount >= query.minAmount!);
+    }
+    if (query.maxAmount !== undefined) {
+      data = data.filter((stream) => stream.totalAmount <= query.maxAmount!);
+    }
+
+    const hasPage = req.query.page !== undefined;
+    const hasLimit = req.query.limit !== undefined;
+
+    const total = data.length;
+    const page = query.page ?? PAGINATION_DEFAULT_PAGE;
+    const limit =
+      !hasPage && !hasLimit ? total : (query.limit ?? PAGINATION_DEFAULT_LIMIT);
+
+    const offset = (page - 1) * limit;
+    const paginatedData = data.slice(offset, offset + limit);
+
+    res.json({ data: paginatedData, total, page, limit });
+  },
+);
+
 app.get("/api/streams/:id", readLimiter, (req: Request, res: Response) => {
   const parsedId = parseStreamId(req.params.id);
   if (!parsedId.ok) {
@@ -721,6 +905,8 @@ app.get(
       page,
       limit,
     });
+  },
+);
 
 app.post("/api/auth/token", async (req: Request, res: Response) => {
   const transaction = req.body?.transaction;
@@ -1063,7 +1249,10 @@ app.patch(
     }
 
     const user = (req as any).user;
-
+    if (existingStream.sender !== user.accountId) {
+      sendApiError(req, res, 403, "Only the sender can update this stream.", {
+        code: "FORBIDDEN",
+      });
       return;
     }
 
@@ -1074,7 +1263,25 @@ app.patch(
     }
 
     try {
-
+      const updated = updateStreamStartAt(parsedId.value, parsedBody.data.startAt);
+      res.json({
+        data: {
+          ...updated,
+          progress: calculateProgress(updated),
+        },
+      });
+    } catch (error: any) {
+      const normalizedError = normalizeUnknownApiError(
+        error,
+        "Failed to update stream start time.",
+      );
+      sendApiError(
+        req,
+        res,
+        normalizedError.statusCode,
+        normalizedError.message,
+        { code: normalizedError.code ?? "INTERNAL_ERROR" },
+      );
     }
   },
 );
