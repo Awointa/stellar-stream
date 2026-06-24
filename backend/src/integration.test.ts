@@ -1069,7 +1069,8 @@ describe("Backend Integration Tests", () => {
 
         // Verify stream is marked as completed
         const response = await request(app)
-          .get(`/api/streams/${completedStream.id}/history`);
+          .get(`/api/streams/${completedStream.id}/history`)
+          .query({ page: 1, pageSize: 50 });
 
         expect(response.status).toBe(200);
         expect(response.body.data).toHaveLength(2);

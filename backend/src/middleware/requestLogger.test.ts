@@ -88,4 +88,49 @@ describe("requestLogger", () => {
     expect((res as any).setHeader).toHaveBeenCalledWith("X-Request-ID", existingRequestId);
     expect(req.requestId).toBe(existingRequestId);
   });
+
+  it("should generate new UUID for invalid request ID format", () => {
+    const invalidRequestId = "invalid@id#with!special";
+    const req = {
+      method: "GET",
+      originalUrl: "/api/streams",
+      headers: {
+        "x-request-id": invalidRequestId,
+      },
+    } as unknown as Request;
+
+    const res = new EventEmitter() as Response;
+    (res as any).statusCode = 200;
+    (res as any).setHeader = vi.fn();
+
+    const next = vi.fn();
+
+    requestLogger(req, res, next);
+    expect(next).toHaveBeenCalled();
+    expect(req.requestId).toBeDefined();
+    expect(req.requestId).not.toBe(invalidRequestId);
+    // Should be a valid UUID format
+    expect(req.requestId).toMatch(/^[a-f0-9-]{36}$/);
+  });
+
+  it("should handle array of request IDs by using first value", () => {
+    const req = {
+      method: "GET",
+      originalUrl: "/api/streams",
+      headers: {
+        "x-request-id": ["first-id", "second-id"],
+      },
+    } as unknown as Request;
+
+    const res = new EventEmitter() as Response;
+    (res as any).statusCode = 200;
+    (res as any).setHeader = vi.fn();
+
+    const next = vi.fn();
+
+    requestLogger(req, res, next);
+    expect(next).toHaveBeenCalled();
+    expect((res as any).setHeader).toHaveBeenCalledWith("X-Request-ID", "first-id");
+    expect(req.requestId).toBe("first-id");
+  });
 });

@@ -11,7 +11,25 @@ declare global {
 }
 
 export function requestLogger(req: Request, res: Response, next: NextFunction) {
-  const requestId = (req.headers["x-request-id"] as string) || crypto.randomUUID();
+  // Validate and normalize x-request-id header
+  let requestId: string;
+  const headerValue = req.headers["x-request-id"];
+
+  if (Array.isArray(headerValue)) {
+    // Use the first value if multiple headers are sent
+    requestId = headerValue[0];
+  } else if (typeof headerValue === "string") {
+    requestId = headerValue;
+  } else {
+    requestId = crypto.randomUUID();
+  }
+
+  // Validate format: should be a UUID-like string, max 128 chars, alphanumeric + hyphens
+  const isValidId = /^[a-zA-Z0-9-]{1,128}$/.test(requestId);
+  if (!isValidId) {
+    requestId = crypto.randomUUID();
+  }
+
   req.requestId = requestId;
 
   const requestLogger = logger.child({ requestId });

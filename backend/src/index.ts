@@ -1352,7 +1352,7 @@ app.get(
     }
 
     const progress = calculateProgress(stream);
-    const history = getStreamHistory(parsedId.value);
+    const history = getStreamHistory(parsedId.value, 50, 0, 'asc');
 
     res.json({
       data: {
