@@ -380,6 +380,7 @@ function App() {
               onLoadMore={loadMore}
               hasMore={hasMore}
               loadingMore={loadingMore}
+              onRefreshStreams={() => refreshStreams(apiFilters)}
             />
           </section>
 

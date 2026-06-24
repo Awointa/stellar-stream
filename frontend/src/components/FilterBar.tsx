@@ -1,9 +1,11 @@
 import React from "react";
 import { ListStreamsFilters } from "../services/api";
+import { useUrlFilters } from "../hooks/useUrlFilters";
 
 interface FilterBarProps {
   filters: ListStreamsFilters;
   onChange: (filters: ListStreamsFilters) => void;
+  useUrlFilters?: boolean;
 }
 
 const STATUS_OPTIONS = [
@@ -15,36 +17,54 @@ const STATUS_OPTIONS = [
   { label: "Canceled", value: "canceled" },
 ];
 
-export function FilterBar({ filters, onChange }: FilterBarProps) {
+export function FilterBar({ filters, onChange, useUrlFilters: enableUrlFilters = false }: FilterBarProps) {
+  const { setFilters: setUrlFilters } = useUrlFilters();
+
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    onChange({ ...filters, [name]: value });
+    const newFilters = { ...filters, [name]: value };
+    onChange(newFilters);
+    if (enableUrlFilters) {
+      setUrlFilters({ ...newFilters, page: 1 });
+    }
   };
 
   const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onChange({ ...filters, status: e.target.value });
+    const newFilters = { ...filters, status: e.target.value };
+    onChange(newFilters);
+    if (enableUrlFilters) {
+      setUrlFilters({ ...newFilters, page: 1 });
+    }
   };
 
   const applyPreset = (preset: Partial<ListStreamsFilters>) => {
     // Presets clear other search/identity filters to focus on the monitoring view
-    onChange({
+    const newFilters = {
       status: preset.status || "",
       q: "",
       asset: "",
       sender: "",
       recipient: "",
       ...preset,
-    });
+    };
+    onChange(newFilters);
+    if (enableUrlFilters) {
+      setUrlFilters({ ...newFilters, page: 1 });
+    }
   };
 
   const handleReset = () => {
-    onChange({
+    const newFilters = {
       status: "",
       q: "",
       asset: "",
       sender: "",
       recipient: "",
-    });
+    };
+    onChange(newFilters);
+    if (enableUrlFilters) {
+      setUrlFilters({ ...newFilters, page: 1 });
+    }
   };
 
   return (

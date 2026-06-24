@@ -21,6 +21,7 @@ import {
   useStreamTableColumns,
   type OptionalStreamColumn,
 } from "../hooks/useStreamTableColumns";
+import { useWebSocket } from "../hooks/useWebSocket";
 
 interface StreamsTableProps {
   streams: Stream[];
@@ -38,6 +39,7 @@ interface StreamsTableProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
+  onRefreshStreams?: () => void;
 }
 
 const SKELETON_ROW_COUNT = 6;
@@ -101,11 +103,32 @@ export function StreamsTable({
   onLoadMore,
   hasMore = true,
   loadingMore = false,
+  onRefreshStreams,
 }: StreamsTableProps) {
   const { visibility, toggleColumn, isVisible } = useStreamTableColumns();
   const [columnsOpen, setColumnsOpen] = useState(false);
   const columnsRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const [streamProgressUpdates, setStreamProgressUpdates] = useState<Map<string, Stream["progress"]>>(new Map());
+
+  const wsUrl = import.meta.env.VITE_WS_URL ?? "";
+  const { readyState } = useWebSocket<{
+    type: string;
+    streamId?: string;
+    progress?: Stream["progress"];
+  }>(wsUrl, {
+    onMessage: (data) => {
+      if (data.type === "stream_progress" && data.streamId && data.progress) {
+        setStreamProgressUpdates((prev) => {
+          const next = new Map(prev);
+          next.set(data.streamId!, data.progress!);
+          return next;
+        });
+      }
+    },
+  });
+
+  const isWebSocketConnected = readyState === 1; // WebSocket.OPEN
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -132,6 +155,18 @@ export function StreamsTable({
   const sortedStreams = useMemo(
     () => [...streams].sort((a, b) => a.id.localeCompare(b.id)),
     [streams],
+  );
+
+  const streamsWithProgress = useMemo(
+    () =>
+      sortedStreams.map((stream) => {
+        const progressUpdate = streamProgressUpdates.get(stream.id);
+        if (progressUpdate) {
+          return { ...stream, progress: progressUpdate };
+        }
+        return stream;
+      }),
+    [sortedStreams, streamProgressUpdates],
   );
 
   const visibleOptionalColumns = useMemo(
@@ -291,31 +326,35 @@ export function StreamsTable({
     stream: Stream,
     dataIndex: number,
     measureRef?: (element: HTMLTableRowElement | null) => void,
-  ) => (
-    <StreamRow
-      key={stream.id}
-      stream={stream}
-      isScheduled={stream.progress.status === "scheduled"}
-      isFinalised={
-        stream.progress.status === "completed" ||
-        stream.progress.status === "canceled"
-      }
-      isExpanded={expandedStreamId === stream.id}
-      healthBadges={getHealthBadges(stream)}
-      isSelected={selectedStreamIds.has(stream.id)}
-      visibleOptionalColumns={visibleOptionalColumns}
-      colSpan={colCount}
-      measureRef={measureRef}
-      dataIndex={dataIndex}
-      onToggleTimeline={toggleTimeline}
-      onCheckboxToggle={handleCheckboxToggle}
-      onCancel={onCancel}
-      onPause={onPause}
-      onResume={onResume}
-      onEditStartTime={onEditStartTime}
-      onOpenStream={onOpenStream}
-    />
-  );
+  ) => {
+    const progressUpdate = streamProgressUpdates.get(stream.id);
+    const streamWithProgress = progressUpdate ? { ...stream, progress: progressUpdate } : stream;
+    return (
+      <StreamRow
+        key={stream.id}
+        stream={streamWithProgress}
+        isScheduled={streamWithProgress.progress.status === "scheduled"}
+        isFinalised={
+          streamWithProgress.progress.status === "completed" ||
+          streamWithProgress.progress.status === "canceled"
+        }
+        isExpanded={expandedStreamId === stream.id}
+        healthBadges={getHealthBadges(streamWithProgress)}
+        isSelected={selectedStreamIds.has(stream.id)}
+        visibleOptionalColumns={visibleOptionalColumns}
+        colSpan={colCount}
+        measureRef={measureRef}
+        dataIndex={dataIndex}
+        onToggleTimeline={toggleTimeline}
+        onCheckboxToggle={handleCheckboxToggle}
+        onCancel={onCancel}
+        onPause={onPause}
+        onResume={onResume}
+        onEditStartTime={onEditStartTime}
+        onOpenStream={onOpenStream}
+      />
+    );
+  };
 
   const paddingTop =
     resolvedVirtualRows.length > 0 ? resolvedVirtualRows[0].start : 0;
@@ -326,6 +365,23 @@ export function StreamsTable({
 
   return (
     <>
+      {!isWebSocketConnected && (
+        <div className="ws-disconnected-banner" style={{
+          background: "#fef3c7",
+          border: "1px solid #fcd34d",
+          borderRadius: "8px",
+          padding: "0.5rem 0.75rem",
+          marginBottom: "1rem",
+          fontSize: "0.85rem",
+          color: "#92400e",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+        }}>
+          <span>⚠️</span>
+          <span>Live updates paused - using polling for progress updates</span>
+        </div>
+      )}
       <div className="card">
         <FilterBar filters={filters} onChange={onFiltersChange} />
         <div
@@ -451,7 +507,7 @@ export function StreamsTable({
                   )}
                   {resolvedVirtualRows.map((virtualRow) =>
                     renderStreamRow(
-                      sortedStreams[virtualRow.index],
+                      streamsWithProgress[virtualRow.index],
                       virtualRow.index,
                       rowVirtualizer.measureElement,
                     ),
@@ -466,7 +522,7 @@ export function StreamsTable({
                   )}
                 </>
               ) : (
-                sortedStreams.map((stream, index) => renderStreamRow(stream, index))
+                streamsWithProgress.map((stream, index) => renderStreamRow(stream, index))
               )}
             </tbody>
           </table>

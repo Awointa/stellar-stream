@@ -75,6 +75,43 @@ describe("Backend Integration Tests", () => {
     });
   });
 
+  describe("Security Headers", () => {
+    it("should have Content-Security-Policy header with default-src 'none'", async () => {
+      const response = await request(app).get("/api/health");
+
+      expect(response.status).toBe(200);
+      expect(response.headers["content-security-policy"]).toContain("default-src 'none'");
+    });
+
+    it("should have X-Frame-Options header", async () => {
+      const response = await request(app).get("/api/health");
+
+      expect(response.status).toBe(200);
+      expect(response.headers["x-frame-options"]).toBeDefined();
+    });
+
+    it("should have Strict-Transport-Security header", async () => {
+      const response = await request(app).get("/api/health");
+
+      expect(response.status).toBe(200);
+      expect(response.headers["strict-transport-security"]).toBeDefined();
+    });
+
+    it("should have X-Content-Type-Options header", async () => {
+      const response = await request(app).get("/api/health");
+
+      expect(response.status).toBe(200);
+      expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    });
+
+    it("should remove X-Powered-By header", async () => {
+      const response = await request(app).get("/api/health");
+
+      expect(response.status).toBe(200);
+      expect(response.headers["x-powered-by"]).toBeUndefined();
+    });
+  });
+
   describe("Stream Lifecycle", () => {
     const validSender = Keypair.random().publicKey();
     const validRecipient = Keypair.random().publicKey();
