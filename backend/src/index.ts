@@ -287,6 +287,10 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
+app.get("/api/docs/openapi.json", (_req: Request, res: Response) => {
+  res.json(swaggerDocument);
+});
+
 function parseStreamId(
   streamIdRaw: unknown,
 ): { ok: true; value: string } | { ok: false; issues: z.ZodIssue[] } {
@@ -1421,10 +1425,7 @@ app.patch(
     }
 
     try {
-      const updated = updateStreamStartAt(parsedId.value, parsedBody.data.startAt);
-      res.json({ data: updated });
-      return;
-    } catch (error: any) {
+<
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to update stream start time.",
@@ -1434,9 +1435,7 @@ app.patch(
         res,
         normalizedError.statusCode,
         normalizedError.message,
-        { code: normalizedError.code ?? "UPDATE_FAILED" },
-      );
-      return;
+
     }
   },
 );

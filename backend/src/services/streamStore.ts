@@ -454,13 +454,7 @@ export function calculateProgress(
   const effectiveAt =
     stream.pausedAt !== undefined ? Math.min(at, stream.pausedAt) : at;
 
-  const elapsed = Math.max(
-    0,
-    Math.min(
-      effectiveAt - stream.startAt - stream.pausedDuration,
-      stream.durationSeconds,
-    ),
-  );
+
 
   const ratio = Math.min(1, elapsed / stream.durationSeconds);
   const vestedAmount = stream.totalAmount * ratio;
