@@ -50,6 +50,7 @@ import {
   listStreams,
   listStreamsByRecipient,
   listStreamsBySender,
+  markStreamComplete,
   pauseStream,
   estimateCreateStreamFee,
   refreshStreamStatuses,
@@ -77,6 +78,7 @@ import {
 import { validateEnv } from "./config/validateEnv";
 import { getMetricsHistory } from "./services/metricsHistory";
 import { initCache } from "./services/cache";
+import { getGlobalStats } from "./services/stats";
 import { logger } from "./logger";
 
 const STREAM_STATUSES: StreamStatus[] = [
@@ -227,7 +229,38 @@ const claimableLimiter = rateLimit({
   },
 });
 
-app.use(cors());
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS;
+
+if (ALLOWED_ORIGINS) {
+  const allowedOrigins = ALLOWED_ORIGINS.split(",").map((o) => o.trim());
+
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+
+    if (req.method === "OPTIONS" && req.headers["access-control-request-method"]) {
+      if (!origin || !allowedOrigins.includes(origin)) {
+        res.status(403).end();
+        return;
+      }
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE");
+      res.setHeader("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] || "");
+      res.setHeader("Content-Length", "0");
+      res.status(204).end();
+      return;
+    }
+
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+    }
+
+    next();
+  });
+} else {
+  app.use(cors());
+}
 app.use(requestLogger);
 app.use(
   express.json({
@@ -254,6 +287,10 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+app.get("/api/docs/openapi.json", (_req: Request, res: Response) => {
+  res.json(swaggerDocument);
+});
 
 function parseStreamId(
   streamIdRaw: unknown,
@@ -286,9 +323,15 @@ app.get("/api/health", (_req: Request, res: Response) => {
   });
 });
 
-app.get("/api/stats", readLimiter, (_req: Request, res: Response) => {
-  const stats = getStreamStats();
-  res.json({ data: stats });
+app.get("/api/stats", (_req: Request, res: Response) => {
+  try {
+    const stats = getGlobalStats();
+    res.set("Cache-Control", "max-age=30");
+    res.json({ data: stats });
+  } catch (error) {
+    logger.error({ err: error }, "Failed to get stats");
+    sendApiError(_req, res, 500, "Failed to compute stats.", { code: "INTERNAL_ERROR" });
+  }
 });
 
 const METRICS_AUTH = process.env.METRICS_AUTH?.trim() || null; // format: "user:password"
@@ -353,7 +396,7 @@ app.get("/api/assets", (_req: Request, res: Response) => {
   });
 });
 
-app.get("/api/streams", readLimiter, (req: Request, res: Response) => {
+app.get("/api/streams", readLimiter, async (req: Request, res: Response) => {
   const parsedQuery = listStreamsQuerySchema.safeParse(req.query);
   if (!parsedQuery.success) {
     sendValidationError(req, res, parsedQuery.error.issues);
@@ -361,6 +404,20 @@ app.get("/api/streams", readLimiter, (req: Request, res: Response) => {
   }
 
   const query = parsedQuery.data;
+  const cacheKey = `streams:list:${JSON.stringify(query)}`;
+  
+  try {
+    const cache = getCache();
+    const cached = await cache.get<{ data: any[], total: number, page: number, limit: number }>(cacheKey);
+    if (cached) {
+      res.set("Cache-Control", "max-age=5");
+      res.json(cached);
+      return;
+    }
+  } catch {
+    // If cache fails, just proceed without caching
+  }
+
   const hasPage = req.query.page !== undefined;
   const hasLimit = req.query.limit !== undefined;
 
@@ -418,13 +475,23 @@ app.get("/api/streams", readLimiter, (req: Request, res: Response) => {
 
   const offset = (page - 1) * limit;
   const paginatedData = data.slice(offset, offset + limit);
-
-  res.json({
+  
+  const result = {
     data: paginatedData,
     total,
     page,
     limit,
-  });
+  };
+
+  try {
+    const cache = getCache();
+    await cache.set(cacheKey, result, 5);
+  } catch {
+    // If cache fails, just proceed
+  }
+
+  res.set("Cache-Control", "max-age=5");
+  res.json(result);
 });
 
 app.get("/api/events", readLimiter, (req: Request, res: Response) => {
@@ -459,7 +526,7 @@ app.get("/api/events", readLimiter, (req: Request, res: Response) => {
 app.get(
   "/api/streams/export.csv",
   readLimiter,
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const parsedQuery = listStreamsQuerySchema.safeParse(req.query);
     if (!parsedQuery.success) {
       sendValidationError(req, res, parsedQuery.error.issues);
@@ -467,6 +534,22 @@ app.get(
     }
 
     const query = parsedQuery.data;
+    const cacheKey = `streams:export:${JSON.stringify(query)}`;
+    
+    try {
+      const cache = getCache();
+      const cached = await cache.get<string>(cacheKey);
+      if (cached) {
+        res.set("Cache-Control", "max-age=5");
+        res.setHeader("Content-Type", "text/csv");
+        res.setHeader("Content-Disposition", 'attachment; filename="export.csv"');
+        res.send(cached);
+        return;
+      }
+    } catch {
+      // If cache fails, just proceed without caching
+    }
+
     let data = listStreams(query.include_archived).map((stream) => ({
       ...stream,
       progress: calculateProgress(stream),
@@ -504,10 +587,19 @@ app.get(
         return `${stream.id},${stream.sender},${stream.recipient},${stream.assetCode},${stream.totalAmount},${stream.progress.status},${stream.startAt}`;
       })
       .join("\n");
+    const csvContent = header + rows;
 
+    try {
+      const cache = getCache();
+      await cache.set(cacheKey, csvContent, 5);
+    } catch {
+      // If cache fails, just proceed
+    }
+
+    res.set("Cache-Control", "max-age=5");
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", 'attachment; filename="export.csv"');
-    res.send(header + rows);
+    res.send(csvContent);
   },
 );
 
@@ -515,7 +607,7 @@ const claimableBatchBodySchema = z.object({
   streamIds: z
     .array(z.string().regex(/^\d+$/, "Stream ID must be numeric"))
     .min(1, "At least one stream ID is required")
-    .max(20, "Maximum 20 stream IDs per batch"),
+    .max(50, "Maximum 50 stream IDs per batch"),
 });
 
 app.post(
@@ -1061,6 +1153,59 @@ app.post(
   },
 );
 
+// POST /api/streams/:id/mark-complete — sender marks a fully-vested stream as complete
+app.post(
+  "/api/streams/:id/mark-complete",
+  mutationLimiter,
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const parsedId = parseStreamId(req.params.id);
+    if (!parsedId.ok) {
+      sendValidationError(req, res, parsedId.issues);
+      return;
+    }
+
+    const stream = getStream(parsedId.value);
+    if (!stream) {
+      sendApiError(req, res, 404, "Stream not found.", { code: "NOT_FOUND" });
+      return;
+    }
+
+    const user = (req as any).user;
+    if (stream.sender !== user.accountId) {
+      sendApiError(req, res, 403, "Only the sender can complete this stream.", {
+        code: "FORBIDDEN",
+      });
+      return;
+    }
+
+    try {
+      const updated = markStreamComplete(parsedId.value);
+      res.json({
+        data: {
+          ...updated,
+          progress: calculateProgress(updated),
+        },
+      });
+    } catch (error: any) {
+      logger.error({ err: error, streamId: parsedId.value }, "failed to mark stream complete");
+      const normalizedError = normalizeUnknownApiError(
+        error,
+        "Failed to mark stream complete.",
+      );
+      sendApiError(
+        req,
+        res,
+        normalizedError.statusCode,
+        normalizedError.message,
+        {
+          code: normalizedError.code ?? "INTERNAL_ERROR",
+        },
+      );
+    }
+  },
+);
+
 // POST /api/streams/:id/pause — sender pauses an active stream
 app.post(
   "/api/streams/:id/pause",
@@ -1195,7 +1340,19 @@ app.post(
       const db = (await import("./services/db")).getDb();
       const { recordEventWithDb } = await import("./services/eventHistory");
       const now = Math.floor(Date.now() / 1000);
+
+      // Guard against double-spend: check and write inside one atomic transaction.
+      let alreadyClaimed = false;
       db.transaction(() => {
+        const existing = db
+          .prepare(
+            `SELECT 1 FROM stream_events WHERE stream_id = ? AND event_type = 'claimed' LIMIT 1`,
+          )
+          .get(stream.id);
+        if (existing) {
+          alreadyClaimed = true;
+          return;
+        }
         recordEventWithDb(
           db,
           stream.id,
@@ -1206,6 +1363,13 @@ app.post(
           { assetCode: stream.assetCode },
         );
       })();
+
+      if (alreadyClaimed) {
+        sendApiError(req, res, 409, "Stream has already been claimed.", {
+          code: "ALREADY_CLAIMED",
+        });
+        return;
+      }
 
       const history = await import("./services/eventHistory").then((m) =>
         m.getStreamHistory(stream.id),
@@ -1241,7 +1405,7 @@ app.post(
 app.patch(
   "/api/streams/:id/start-time",
   authMiddleware,
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const parsedId = parseStreamId(req.params.id);
     if (!parsedId.ok) {
       sendValidationError(req, res, parsedId.issues);
@@ -1262,10 +1426,7 @@ app.patch(
     }
 
     try {
-      const updated = updateStreamStartAt(parsedId.value, parsedBody.data.startAt);
-      res.json({ data: updated });
-    } catch (error: any) {
-      logger.error({ err: error, streamId: parsedId.value }, "failed to update stream start time");
+<
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to update stream start time.",
@@ -1275,10 +1436,7 @@ app.patch(
         res,
         normalizedError.statusCode,
         normalizedError.message,
-        {
-          code: normalizedError.code ?? "INTERNAL_ERROR",
-        },
-      );
+
     }
   },
 );
