@@ -1396,8 +1396,8 @@ app.post(
 // POST /api/streams/:id/reconcile — sync on-chain state to local SQLite
 app.post(
   "/api/streams/:id/reconcile",
-  reconcileLimiter,
   authMiddleware,
+  reconcileLimiter,
   async (req: Request, res: Response) => {
     const parsedId = parseStreamId(req.params.id);
     if (!parsedId.ok) {
@@ -1415,6 +1415,10 @@ app.post(
       const updated = await reconcileStream(parsedId.value);
       res.json({ data: { ...updated, progress: calculateProgress(updated) } });
     } catch (error: any) {
+      if (error.message === "Stream not found on-chain") {
+        sendApiError(req, res, 404, "Stream not found on-chain.", { code: "NOT_FOUND" });
+        return;
+      }
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to reconcile stream.",

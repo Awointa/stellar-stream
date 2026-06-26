@@ -1246,11 +1246,12 @@ describe("Backend Integration Tests", () => {
       let senderKeypair: ReturnType<typeof Keypair.random>;
       let reconcileStreamId: string;
       let senderToken: string;
+      let testCounter = 0;
 
       beforeEach(() => {
         senderKeypair = Keypair.random();
         const now = Math.floor(Date.now() / 1000);
-        reconcileStreamId = "200";
+        reconcileStreamId = `200-${testCounter++}`;
 
         const db = getDb();
         db.prepare(`

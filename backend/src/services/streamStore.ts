@@ -323,11 +323,14 @@ async function fetchOnChainStreamRecord(
   contract: Contract,
   sourceAccount: Account,
   id: number,
+  bypassCache = false,
 ): Promise<StreamRecord | null> {
   const cacheKey = `stream:${id}`;
-  const cached = await getCached<StreamRecord>(cacheKey);
-  if (cached) {
-    return cached;
+  if (!bypassCache) {
+    const cached = await getCached<StreamRecord>(cacheKey);
+    if (cached) {
+      return cached;
+    }
   }
 
   const simRes = await simulateContractCall(
@@ -674,6 +677,7 @@ export async function reconcileStream(streamId: string): Promise<StreamRecord> {
       sorobanContext.contract,
       sourceAccount,
       id,
+      true, // bypass cache to force fresh Soroban call
     );
 
     if (!onChainStream) {

@@ -108,6 +108,67 @@ export const swaggerDocument = {
           },
         },
       },
+      StreamWithProgress: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Unique identifier for the stream.",
+            example: "uuid-v4-string",
+          },
+          sender: {
+            type: "string",
+            example: "GC7Y4M77LNYKYF4K4V5A737W3G3L3T7XQWZJZL4R64Z43W3T7XZQK2L4",
+          },
+          recipient: {
+            type: "string",
+            example: "GB4Z3ZK3X24Z3T7XZQK2L4R64Z43W3T7XZQK2L4R64Z43W3T7XZQK2L4",
+          },
+          assetCode: {
+            type: "string",
+            example: "USDC",
+          },
+          totalAmount: {
+            type: "number",
+            example: 1000,
+          },
+          durationSeconds: {
+            type: "number",
+            example: 3600,
+          },
+          startAt: {
+            type: "number",
+            example: 1716382000,
+          },
+          createdAt: {
+            type: "number",
+            example: 1716378400,
+          },
+          canceledAt: {
+            type: "number",
+            example: 1716385600,
+          },
+          completedAt: {
+            type: "number",
+            example: 1716389200,
+          },
+          refundedAmount: {
+            type: "number",
+            example: 500,
+          },
+          pausedAt: {
+            type: "number",
+            example: 1716384000,
+          },
+          pausedDuration: {
+            type: "number",
+            example: 300,
+          },
+          progress: {
+            $ref: "#/components/schemas/StreamProgress",
+          },
+        },
+      },
       StreamProgress: {
         type: "object",
         properties: {
@@ -1305,6 +1366,7 @@ export const swaggerDocument = {
             },
           },
         ],
+        security: [{ bearerAuth: [] }],
         responses: {
           "200": {
             description: "Stream reconciled successfully.",
@@ -1314,7 +1376,7 @@ export const swaggerDocument = {
                   type: "object",
                   properties: {
                     data: {
-                      $ref: "#/components/schemas/Stream",
+                      $ref: "#/components/schemas/StreamWithProgress",
                     },
                   },
                 },
