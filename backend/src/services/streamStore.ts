@@ -65,6 +65,16 @@ export interface StreamProgress {
   percentComplete: number;
 }
 
+export type SortField = "totalAmount" | "startAt" | "createdAt" | "durationSeconds";
+export type SortOrder = "asc" | "desc";
+
+const SORT_COLUMNS: Record<SortField, string> = {
+  totalAmount: "total_amount",
+  startAt: "start_at",
+  createdAt: "created_at",
+  durationSeconds: "duration_seconds",
+};
+
 interface StreamRow {
   id: string;
   sender: string;
@@ -947,15 +957,28 @@ export async function archiveOldStreams(): Promise<number> {
 }
 
 /**
+ * Builds the ORDER BY clause for a sort field and order direction.
+ * Uses a whitelist of allowed column names to prevent SQL injection.
+ */
+function buildOrderClause(sort: SortField, order: SortOrder): string {
+  const column = SORT_COLUMNS[sort];
+  const dir = order === "asc" ? "ASC" : "DESC";
+  return `ORDER BY ${column} ${dir}`;
+}
+
+/**
  * Lists all streams from the database.
  * @param {boolean} [includeArchived=false] - Whether to include archived streams
- * @returns {StreamRecord[]} Array of stream records sorted by creation date (newest first)
+ * @param {SortField} [sort="createdAt"] - Field to sort by
+ * @param {SortOrder} [order="desc"] - Sort direction
+ * @returns {StreamRecord[]} Array of stream records sorted by the specified field
  */
-export function listStreams(includeArchived = false): StreamRecord[] {
+export function listStreams(includeArchived = false, sort: SortField = "createdAt", order: SortOrder = "desc"): StreamRecord[] {
   const db = getDb();
+  const orderClause = buildOrderClause(sort, order);
   const query = includeArchived
-    ? "SELECT * FROM streams ORDER BY created_at DESC"
-    : "SELECT * FROM streams WHERE archived_at IS NULL ORDER BY created_at DESC";
+    ? `SELECT * FROM streams ${orderClause}`
+    : `SELECT * FROM streams WHERE archived_at IS NULL ${orderClause}`;
   const rows = db.prepare(query).all() as StreamRow[];
   return rows.map(rowToRecord);
 }
@@ -963,12 +986,15 @@ export function listStreams(includeArchived = false): StreamRecord[] {
 /**
  * Lists all streams where the given address is the recipient.
  * @param {string} recipientAddress - Stellar account address to filter by
- * @returns {StreamRecord[]} Array of stream records sorted by creation date (newest first)
+ * @param {SortField} [sort="createdAt"] - Field to sort by
+ * @param {SortOrder} [order="desc"] - Sort direction
+ * @returns {StreamRecord[]} Array of stream records sorted by the specified field
  */
-export function listStreamsByRecipient(recipientAddress: string): StreamRecord[] {
+export function listStreamsByRecipient(recipientAddress: string, sort: SortField = "createdAt", order: SortOrder = "desc"): StreamRecord[] {
   const db = getDb();
+  const orderClause = buildOrderClause(sort, order);
   const rows = db
-    .prepare("SELECT * FROM streams WHERE recipient = ? ORDER BY created_at DESC")
+    .prepare(`SELECT * FROM streams WHERE recipient = ? ${orderClause}`)
     .all(recipientAddress) as StreamRow[];
   return rows.map(rowToRecord);
 }
@@ -976,12 +1002,15 @@ export function listStreamsByRecipient(recipientAddress: string): StreamRecord[]
 /**
  * Lists all streams where the given address is the sender.
  * @param {string} senderAddress - Stellar account address to filter by
- * @returns {StreamRecord[]} Array of stream records sorted by creation date (newest first)
+ * @param {SortField} [sort="createdAt"] - Field to sort by
+ * @param {SortOrder} [order="desc"] - Sort direction
+ * @returns {StreamRecord[]} Array of stream records sorted by the specified field
  */
-export function listStreamsBySender(senderAddress: string): StreamRecord[] {
+export function listStreamsBySender(senderAddress: string, sort: SortField = "createdAt", order: SortOrder = "desc"): StreamRecord[] {
   const db = getDb();
+  const orderClause = buildOrderClause(sort, order);
   const rows = db
-    .prepare("SELECT * FROM streams WHERE sender = ? ORDER BY created_at DESC")
+    .prepare(`SELECT * FROM streams WHERE sender = ? ${orderClause}`)
     .all(senderAddress) as StreamRow[];
   return rows.map(rowToRecord);
 }

@@ -564,6 +564,28 @@ export const swaggerDocument = {
               maximum: 100,
             },
           },
+          {
+            name: "sort",
+            in: "query",
+            required: false,
+            description:
+              "Field to sort by. Defaults to createdAt.",
+            schema: {
+              type: "string",
+              enum: ["totalAmount", "startAt", "createdAt", "durationSeconds"],
+            },
+          },
+          {
+            name: "order",
+            in: "query",
+            required: false,
+            description:
+              "Sort direction. Defaults to desc.",
+            schema: {
+              type: "string",
+              enum: ["asc", "desc"],
+            },
+          },
         ],
         responses: {
           "200": {

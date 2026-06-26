@@ -108,6 +108,9 @@ const ALLOWED_ASSETS = (process.env.ALLOWED_ASSETS || "USDC,XLM")
   .split(",")
   .map((asset) => asset.trim().toUpperCase());
 
+const SORT_FIELDS = ["totalAmount", "startAt", "createdAt", "durationSeconds"] as const;
+const SORT_ORDERS = ["asc", "desc"] as const;
+
 const listStreamsQuerySchema = z.object({
   status: z
     .string()
@@ -156,6 +159,12 @@ const listStreamsQuerySchema = z.object({
       PAGINATION_MAX_LIMIT,
       `limit must be less than or equal to ${PAGINATION_MAX_LIMIT}`,
     )
+    .optional(),
+  sort: z
+    .enum(SORT_FIELDS)
+    .optional(),
+  order: z
+    .enum(SORT_ORDERS)
     .optional(),
 });
 
@@ -443,7 +452,7 @@ app.get("/api/streams", readLimiter, async (req: Request, res: Response) => {
   const hasLimit = req.query.limit !== undefined;
 
   const now = nowInSeconds();
-  let data = listStreams(query.include_archived).map((stream) => ({
+  let data = listStreams(query.include_archived, query.sort ?? "createdAt", query.order ?? "desc").map((stream) => ({
     ...stream,
     progress: calculateProgress(stream, now),
   }));
@@ -748,7 +757,7 @@ app.get(
 
     const rawStreams = await withAddressCache(
       `streams:sender:${address}`,
-      () => listStreamsBySender(address),
+      () => listStreamsBySender(address, query.sort ?? "createdAt", query.order ?? "desc"),
     );
 
     const now = nowInSeconds();
@@ -833,7 +842,7 @@ app.get(
 
     const rawStreams = await withAddressCache(
       `streams:recipient:${address}`,
-      () => listStreamsByRecipient(address),
+      () => listStreamsByRecipient(address, query.sort ?? "createdAt", query.order ?? "desc"),
     );
 
     const now = nowInSeconds();
@@ -937,7 +946,7 @@ app.get(
     const query = parsedQuery.data;
 
     const now = nowInSeconds();
-    let data = listStreamsByRecipient(accountId).map((stream) => ({
+    let data = listStreamsByRecipient(accountId, query.sort ?? "createdAt", query.order ?? "desc").map((stream) => ({
       ...stream,
       progress: calculateProgress(stream, now),
     }));
@@ -1011,7 +1020,7 @@ app.get(
     const query = parsedQuery.data;
 
     const now = nowInSeconds();
-    let data = listStreamsBySender(accountId).map((stream) => ({
+    let data = listStreamsBySender(accountId, query.sort ?? "createdAt", query.order ?? "desc").map((stream) => ({
       ...stream,
       progress: calculateProgress(stream, now),
     }));
@@ -1483,7 +1492,9 @@ app.patch(
     }
 
     try {
-<
+      const updated = await updateStreamStartAt(parsedId.value, parsedBody.data.startAt);
+      res.json({ data: { ...updated, progress: calculateProgress(updated) } });
+    } catch (error: any) {
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to update stream start time.",
@@ -1493,7 +1504,8 @@ app.patch(
         res,
         normalizedError.statusCode,
         normalizedError.message,
-
+        { code: normalizedError.code ?? "INTERNAL_ERROR" },
+      );
     }
   },
 );

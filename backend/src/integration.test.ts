@@ -575,6 +575,143 @@ describe("Backend Integration Tests", () => {
         expect(response.status).toBe(400);
         expect(response.body.error).toContain("limit must be less than or equal to 100");
       });
+
+      describe("sort and order", () => {
+        const senderAlpha = "G" + "A".repeat(55);
+        const recipientAlpha = "G" + "B".repeat(55);
+
+        function seedSortableStreams() {
+          const db = getDb();
+          db.exec("DELETE FROM streams");
+          const now = Math.floor(Date.now() / 1000);
+          const insert = db.prepare(`
+            INSERT INTO streams (id, sender, recipient, asset_code, total_amount, duration_seconds, start_at, created_at)
+            VALUES (@id, @sender, @recipient, @assetCode, @totalAmount, @durationSeconds, @startAt, @createdAt)
+          `);
+
+          // Stream A: smallest totalAmount, earliest startAt, earliest createdAt, shortest duration
+          insert.run({ id: "1", sender: senderAlpha, recipient: recipientAlpha, assetCode: "USDC", totalAmount: 100, durationSeconds: 100, startAt: now - 300, createdAt: now - 300 });
+          // Stream B: middle values
+          insert.run({ id: "2", sender: senderAlpha, recipient: recipientAlpha, assetCode: "USDC", totalAmount: 500, durationSeconds: 500, startAt: now - 200, createdAt: now - 200 });
+          // Stream C: largest totalAmount, latest startAt, latest createdAt, longest duration
+          insert.run({ id: "3", sender: senderAlpha, recipient: recipientAlpha, assetCode: "USDC", totalAmount: 1000, durationSeconds: 1000, startAt: now - 100, createdAt: now - 100 });
+        }
+
+        it("should sort by totalAmount asc", async () => {
+          seedSortableStreams();
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "totalAmount", order: "asc" });
+          expect(response.status).toBe(200);
+          const amounts = response.body.data.map((s: any) => s.totalAmount);
+          expect(amounts).toEqual([100, 500, 1000]);
+        });
+
+        it("should sort by totalAmount desc", async () => {
+          seedSortableStreams();
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "totalAmount", order: "desc" });
+          expect(response.status).toBe(200);
+          const amounts = response.body.data.map((s: any) => s.totalAmount);
+          expect(amounts).toEqual([1000, 500, 100]);
+        });
+
+        it("should sort by startAt asc", async () => {
+          seedSortableStreams();
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "startAt", order: "asc" });
+          expect(response.status).toBe(200);
+          const startAts = response.body.data.map((s: any) => s.startAt);
+          for (let i = 1; i < startAts.length; i++) {
+            expect(startAts[i]).toBeGreaterThanOrEqual(startAts[i - 1]);
+          }
+        });
+
+        it("should sort by startAt desc", async () => {
+          seedSortableStreams();
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "startAt", order: "desc" });
+          expect(response.status).toBe(200);
+          const startAts = response.body.data.map((s: any) => s.startAt);
+          for (let i = 1; i < startAts.length; i++) {
+            expect(startAts[i]).toBeLessThanOrEqual(startAts[i - 1]);
+          }
+        });
+
+        it("should sort by createdAt asc", async () => {
+          seedSortableStreams();
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "createdAt", order: "asc" });
+          expect(response.status).toBe(200);
+          const createdAt = response.body.data.map((s: any) => s.createdAt);
+          for (let i = 1; i < createdAt.length; i++) {
+            expect(createdAt[i]).toBeGreaterThanOrEqual(createdAt[i - 1]);
+          }
+        });
+
+        it("should sort by createdAt desc (default)", async () => {
+          seedSortableStreams();
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "createdAt", order: "desc" });
+          expect(response.status).toBe(200);
+          const createdAt = response.body.data.map((s: any) => s.createdAt);
+          for (let i = 1; i < createdAt.length; i++) {
+            expect(createdAt[i]).toBeLessThanOrEqual(createdAt[i - 1]);
+          }
+        });
+
+        it("should sort by durationSeconds asc", async () => {
+          seedSortableStreams();
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "durationSeconds", order: "asc" });
+          expect(response.status).toBe(200);
+          const durations = response.body.data.map((s: any) => s.durationSeconds);
+          expect(durations).toEqual([100, 500, 1000]);
+        });
+
+        it("should sort by durationSeconds desc", async () => {
+          seedSortableStreams();
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "durationSeconds", order: "desc" });
+          expect(response.status).toBe(200);
+          const durations = response.body.data.map((s: any) => s.durationSeconds);
+          expect(durations).toEqual([1000, 500, 100]);
+        });
+
+        it("should default to createdAt desc when no sort/order specified", async () => {
+          seedSortableStreams();
+          const response = await request(app)
+            .get("/api/streams");
+          expect(response.status).toBe(200);
+          const createdAt = response.body.data.map((s: any) => s.createdAt);
+          for (let i = 1; i < createdAt.length; i++) {
+            expect(createdAt[i]).toBeLessThanOrEqual(createdAt[i - 1]);
+          }
+        });
+
+        it("should return 400 for invalid sort field", async () => {
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "invalidField" });
+          expect(response.status).toBe(400);
+          expect(response.body.error).toContain("sort must be one of");
+        });
+
+        it("should return 400 for invalid order", async () => {
+          const response = await request(app)
+            .get("/api/streams")
+            .query({ sort: "createdAt", order: "invalid" });
+          expect(response.status).toBe(400);
+          expect(response.body.error).toContain("order must be one of");
+        });
+      });
     });
 
     describe("GET /api/streams/:id", () => {
@@ -1205,7 +1342,7 @@ describe("Backend Integration Tests", () => {
         `).run(completedStream.id, "created", completedStream.created_at, completedStream.sender);
 
         // Call refreshStreamStatuses to mark stream as completed and record event
-        const { refreshStreamStatuses } = await import("../services/streamStore");
+        const { refreshStreamStatuses } = await import("./services/streamStore");
         refreshStreamStatuses();
 
         // Verify stream is marked as completed
