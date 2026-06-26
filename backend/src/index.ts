@@ -6,6 +6,9 @@ import express, { NextFunction, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import swaggerUi from "swagger-ui-express";
 import { z } from "zod";
+import { createServer } from "http";
+import { searchStreamsFts } from "./services/db";
+import { initWebSocket } from "./services/websocket";
 import {
   normalizeUnknownApiError,
   sendApiError,
@@ -32,6 +35,8 @@ import { deleteStreamById } from "./services/streamStore";
 import { getStreamStats } from "./services/stats";
 
 import { startReconciliationJob } from "./services/reconciliationJob";
+import { startArchiveJob } from "./services/archiveJob";
+import { startStreamProgressBroadcaster } from "./services/streamProgressBroadcaster";
 import { startWebhookWorker } from "./services/webhookWorker";
 import {
   getDeadLetters,
@@ -509,6 +514,36 @@ app.get("/api/streams", readLimiter, async (req: Request, res: Response) => {
 
   res.set("Cache-Control", "max-age=5");
   res.json(result);
+});
+
+app.get("/api/streams/search", readLimiter, (req: Request, res: Response) => {
+  const q = z.string().min(1, "search query must not be empty").safeParse(req.query.q);
+  if (!q.success) {
+    sendValidationError(req, res, q.error.issues);
+    return;
+  }
+
+  try {
+    const streamIds = searchStreamsFts(q.data);
+    const now = nowInSeconds();
+    const results = streamIds
+      .map((id) => getStream(id))
+      .filter((s) => s !== null)
+      .map((s) => ({
+        ...s,
+        progress: calculateProgress(s!, now),
+      }));
+
+    res.set("Cache-Control", "max-age=5");
+    res.json({
+      data: results,
+      total: results.length,
+      query: q.data,
+    });
+  } catch (err) {
+    logger.error({ err }, "search failed");
+    sendApiError(req, res, 500, "Search failed.", { code: "SEARCH_ERROR" });
+  }
 });
 
 app.get("/api/events", readLimiter, (req: Request, res: Response) => {
@@ -1709,8 +1744,14 @@ async function startServer() {
     logger.warn("CONTRACT_ID not set, event indexer will not start");
   }
 
-  app.listen(config.port, () => {
-    logger.info({ port: config.port }, "StellarStream API listening");
+  startArchiveJob(config.archiveCronIntervalMs);
+  startStreamProgressBroadcaster(5000);
+
+  const server = createServer(app);
+  initWebSocket(server);
+
+  server.listen(config.port, () => {
+    logger.info({ port: config.port }, "StellarStream API listening with WebSocket support");
   });
 }
 

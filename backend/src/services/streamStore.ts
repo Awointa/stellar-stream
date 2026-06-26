@@ -12,7 +12,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import pLimit from "p-limit";
-import { initDb, getDb } from "./db";
+import { initDb, getDb, syncFtsIndex } from "./db";
 import { recordEventWithDb } from "./eventHistory";
 import { streamHasEvent } from "./eventHistory";
 import { triggerWebhook } from "./webhook";
@@ -149,6 +149,7 @@ function upsertStream(record: StreamRecord): void {
     pausedDuration: record.pausedDuration ?? 0,
     metadata: record.metadata ? JSON.stringify(record.metadata) : null,
   });
+  syncFtsIndex(record.id, record.sender, record.recipient, record.assetCode);
 }
 
 function listLocalStreamIds(): Set<string> {
