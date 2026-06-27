@@ -287,6 +287,7 @@ export interface StreamEvent {
   timestamp: number;
   actor?: string;
   amount?: number;
+  txHash?: string;
   metadata?: Record<string, any>;
 }
 
