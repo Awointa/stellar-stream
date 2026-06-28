@@ -163,6 +163,18 @@ export const listEventsQuerySchema = z.object({
     .min(1, "limit must be greater than or equal to 1")
     .max(100, "limit must be less than or equal to 100")
     .optional(),
+  pageSize: z
+    .coerce.number()
+    .int("pageSize must be an integer")
+    .min(1, "pageSize must be greater than or equal to 1")
+    .max(100, "pageSize must be less than or equal to 100")
+    .optional(),
+  streamId: z.string().trim().optional(),
+  since: z
+    .coerce.number()
+    .int("since must be an integer")
+    .positive("since must be a positive unix timestamp")
+    .optional(),
   cursor: z
     .coerce.number()
     .int("cursor must be an integer")
