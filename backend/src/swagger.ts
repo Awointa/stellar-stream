@@ -1666,10 +1666,10 @@ export const swaggerDocument = {
             name: "eventType",
             in: "query",
             required: false,
-            description: "Filter by event type: created, claimed, canceled, paused, resumed, start_time_updated.",
+            description: "Filter by event type: created, claimed, canceled, paused, resumed, start_time_updated, completed.",
             schema: {
               type: "string",
-              enum: ["created", "claimed", "canceled", "paused", "resumed", "start_time_updated"],
+              enum: ["created", "claimed", "canceled", "paused", "resumed", "start_time_updated", "completed"],
             },
           },
           {
@@ -1721,6 +1721,16 @@ export const swaggerDocument = {
                       description: "Number of events per page.",
                     },
                   },
+                },
+              },
+            },
+          },
+          "400": {
+            description: "Validation error — invalid query parameters.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/Error",
                 },
               },
             },

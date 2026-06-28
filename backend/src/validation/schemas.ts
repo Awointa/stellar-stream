@@ -112,7 +112,7 @@ export const updateStreamStartAtSchema = z.object({
   }
 });
 
-const VALID_EVENT_TYPES = ["created", "claimed", "canceled", "start_time_updated", "paused", "resumed"] as const;
+const VALID_EVENT_TYPES = ["created", "claimed", "canceled", "start_time_updated", "paused", "resumed", "completed"] as const;
 
 export const webhookRegistrationSchema = z.object({
   url: z
@@ -169,7 +169,11 @@ export const listEventsQuerySchema = z.object({
     .min(1, "pageSize must be greater than or equal to 1")
     .max(100, "pageSize must be less than or equal to 100")
     .optional(),
-  streamId: z.string().trim().optional(),
+  streamId: z
+    .string()
+    .trim()
+    .min(1, "streamId must not be empty if provided")
+    .optional(),
   since: z
     .coerce.number()
     .int("since must be an integer")
