@@ -35,6 +35,18 @@ const dbMocks = vi.hoisted(() => ({
       }),
     })),
   })),
+  syncFtsIndex: vi.fn(),
+}));
+
+const cacheMocks = vi.hoisted(() => ({
+  initCache: vi.fn(),
+  getCache: vi.fn(() => ({
+    get: vi.fn(),
+    set: vi.fn(),
+    del: vi.fn(),
+    clear: vi.fn(),
+    isConnected: vi.fn(() => true),
+  })),
 }));
 
 const eventHistoryMocks = vi.hoisted(() => ({
@@ -55,6 +67,7 @@ const eventHistoryMocks = vi.hoisted(() => ({
 
 vi.mock("./db", () => dbMocks);
 vi.mock("./eventHistory", () => eventHistoryMocks);
+vi.mock("./cache", () => cacheMocks);
 
 // Import after mocking
 import { updateStreamStartAt, nowInSeconds } from "./streamStore";

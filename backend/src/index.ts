@@ -179,7 +179,7 @@ const authChallengeLimiter = rateLimit({
   max: AUTH_CHALLENGE_RATE_LIMIT,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req: Request, res: Response) => {
+  handler: (req: Request, res: Response, next: NextFunction) => {
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfter = resetTime
       ? Math.ceil((resetTime.getTime() - Date.now()) / 1000)
@@ -200,7 +200,7 @@ const readLimiter = rateLimit({
   max: READ_RATE_LIMIT,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req: Request, res: Response) => {
+  handler: (req: Request, res: Response, next: NextFunction) => {
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfter = resetTime
       ? Math.ceil((resetTime.getTime() - Date.now()) / 1000)
@@ -217,7 +217,7 @@ const mutationLimiter = rateLimit({
   max: MUTATION_RATE_LIMIT,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req: Request, res: Response) => {
+  handler: (req: Request, res: Response, next: NextFunction) => {
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfter = resetTime
       ? Math.ceil((resetTime.getTime() - Date.now()) / 1000)
@@ -236,7 +236,7 @@ const claimableLimiter = rateLimit({
   max: CLAIMABLE_RATE_LIMIT,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req: Request, res: Response) => {
+  handler: (req: Request, res: Response, next: NextFunction) => {
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfter = resetTime
       ? Math.ceil((resetTime.getTime() - Date.now()) / 1000)
@@ -258,7 +258,7 @@ const reconcileLimiter = rateLimit({
     // Use stream ID from params as the rate limit key
     return `reconcile:${req.params.id}`;
   },
-  handler: (req: Request, res: Response) => {
+  handler: (req: Request, res: Response, next: NextFunction) => {
     const resetTime = (req as any).rateLimit?.resetTime;
     const retryAfter = resetTime
       ? Math.ceil((resetTime.getTime() - Date.now()) / 1000)
