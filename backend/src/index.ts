@@ -64,6 +64,7 @@ import {
   verifyChallengeAndIssueToken,
 } from "./services/auth";
 import {
+  bulkCancelStreamsSchema,
   createStreamPayloadWithAllowedAssetsSchema,
   listEventsQuerySchema,
   recipientAccountIdSchema,
@@ -301,7 +302,7 @@ app.get("/api/metrics", async (_req: Request, res: Response) => {
   res.send(output);
 });
 
-// GET /api/metrics/history?days=7 — daily aggregate metrics for the past N days (max 90)
+// GET /api/metrics/history?days=7 â€” daily aggregate metrics for the past N days (max 90)
 app.get(
   "/api/metrics/history",
   readLimiter,
@@ -344,7 +345,7 @@ app.get("/api/assets", (_req: Request, res: Response) => {
   });
 });
 
-
+app.get("/api/streams", readLimiter, (req: Request, res: Response) => {
   const parsedQuery = listStreamsQuerySchema.safeParse(req.query);
   if (!parsedQuery.success) {
     sendValidationError(req, res, parsedQuery.error.issues);
@@ -719,6 +720,8 @@ app.get(
       page,
       limit,
     });
+  },
+);
 
 app.post("/api/auth/token", async (req: Request, res: Response) => {
   const transaction = req.body?.transaction;
@@ -737,7 +740,7 @@ app.post("/api/auth/token", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/auth/refresh — accepts a valid Bearer JWT, returns a new one with fresh 24h expiry
+// POST /api/auth/refresh â€” accepts a valid Bearer JWT, returns a new one with fresh 24h expiry
 app.post("/api/auth/refresh", refreshToken);
 
 app.post(
@@ -832,7 +835,59 @@ app.post(
   },
 );
 
-// POST /api/streams/:id/pause — sender pauses an active stream
+// POST /api/streams/bulk-cancel â€” sender cancels multiple streams
+app.post(
+  "/api/streams/bulk-cancel",
+  mutationLimiter,
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const parsedBody = bulkCancelStreamsSchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      sendValidationError(req, res, parsedBody.error.issues);
+      return;
+    }
+
+    const { streamIds, sender } = parsedBody.data;
+    const user = (req as any).user;
+
+    // Verify the authenticated user matches the sender in the request body
+    if (sender !== user.accountId) {
+      sendApiError(req, res, 403, "Sender in request body does not match authenticated user.", {
+        code: "FORBIDDEN",
+      });
+      return;
+    }
+
+    const canceled: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+
+    // Cancel each stream serially to avoid SQLite lock contention
+    for (const streamId of streamIds) {
+      try {
+        const stream = getStream(streamId);
+        if (!stream) {
+          failed.push({ id: streamId, error: "Stream not found" });
+          continue;
+        }
+
+        if (stream.sender !== user.accountId) {
+          failed.push({ id: streamId, error: "Only the sender can cancel this stream" });
+          continue;
+        }
+
+        await cancelStream(streamId);
+        canceled.push(streamId);
+      } catch (error: any) {
+        console.error(`Failed to cancel stream ${streamId}:`, error);
+        failed.push({ id: streamId, error: error.message || "Unknown error" });
+      }
+    }
+
+    res.json({ canceled, failed });
+  },
+);
+
+// POST /api/streams/:id/pause â€” sender pauses an active stream
 app.post(
   "/api/streams/:id/pause",
   mutationLimiter,
@@ -879,7 +934,7 @@ app.post(
   },
 );
 
-// POST /api/streams/:id/resume — sender resumes a paused stream
+// POST /api/streams/:id/resume â€” sender resumes a paused stream
 app.post(
   "/api/streams/:id/resume",
   mutationLimiter,
@@ -926,7 +981,7 @@ app.post(
   },
 );
 
-// POST /api/streams/:id/claim — recipient claims vested tokens
+// POST /api/streams/:id/claim â€” recipient claims vested tokens
 app.post(
   "/api/streams/:id/claim",
   mutationLimiter,
@@ -1026,7 +1081,10 @@ app.patch(
     }
 
     const user = (req as any).user;
-
+    if (existingStream.sender !== user.accountId) {
+      sendApiError(req, res, 403, "Only the sender can update the start time.", {
+        code: "FORBIDDEN",
+      });
       return;
     }
 
@@ -1037,7 +1095,22 @@ app.patch(
     }
 
     try {
-
+      const updated = updateStreamStartAt(parsedId.value, parsedBody.data.startAt);
+      res.json({ data: { ...updated, progress: calculateProgress(updated) } });
+    } catch (error: any) {
+      const normalizedError = normalizeUnknownApiError(
+        error,
+        "Failed to update start time.",
+      );
+      sendApiError(
+        req,
+        res,
+        normalizedError.statusCode,
+        normalizedError.message,
+        {
+          code: normalizedError.code ?? "INTERNAL_ERROR",
+        },
+      );
     }
   },
 );
@@ -1273,33 +1346,6 @@ app.post(
   },
 );
 
-async function startServer() {
-  const config = validateEnv();
-
-  initCache();
-
-  await initSoroban();
-  await syncStreams();
-
-  if (config.sorobanEnabled && config.contractId) {
-    initIndexer(config.rpcUrl, config.contractId, config.networkPassphrase);
-    startIndexer(config.indexerPollIntervalMs);
-    startReconciliationJob(config.reconciliationIntervalMs);
-  } else {
-    console.warn("CONTRACT_ID not set, event indexer will not start");
-  }
-
-  app.listen(config.port, () => {
-    console.log(
-      `StellarStream API listening on http://localhost:${config.port}`,
-    );
-  });
-}
-
-if (require.main === module) {
-  startServer().catch(console.error);
-}
-
 app.delete("/api/streams/:id", adminAuth, (req: Request, res: Response) => {
   const parsedId = parseStreamId(req.params.id);
   if (!parsedId.ok) {
@@ -1333,3 +1379,30 @@ app.delete("/api/streams/:id", adminAuth, (req: Request, res: Response) => {
     );
   }
 });
+
+async function startServer() {
+  const config = validateEnv();
+
+  initCache();
+
+  await initSoroban();
+  await syncStreams();
+
+  if (config.sorobanEnabled && config.contractId) {
+    initIndexer(config.rpcUrl, config.contractId, config.networkPassphrase);
+    startIndexer(config.indexerPollIntervalMs);
+    startReconciliationJob(config.reconciliationIntervalMs);
+  } else {
+    console.warn("CONTRACT_ID not set, event indexer will not start");
+  }
+
+  app.listen(config.port, () => {
+    console.log(
+      `StellarStream API listening on http://localhost:${config.port}`,
+    );
+  });
+}
+
+if (require.main === module) {
+  startServer().catch(console.error);
+}

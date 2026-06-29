@@ -377,16 +377,13 @@ export function calculateProgress(
   stream: StreamRecord,
   at = nowInSeconds(),
 ): StreamProgress {
-
-  }
-
   const streamEnd = stream.startAt + stream.durationSeconds;
 
   // When paused, vesting is frozen at the moment of pause.
   const effectiveAt =
     stream.pausedAt !== undefined ? Math.min(at, stream.pausedAt) : at;
 
-
+  const elapsed = Math.max(0, Math.min(effectiveAt - stream.startAt, stream.durationSeconds));
 
   const ratio = Math.min(1, elapsed / stream.durationSeconds);
   const vestedAmount = stream.totalAmount * ratio;
@@ -517,7 +514,7 @@ export async function syncStreams() {
 
     const ids = Array.from({ length: nextId - 1 }, (_, i) => i + 1);
 
-    // Concurrency-limited parallel fetch — max 5 simultaneous RPC calls.
+    // Concurrency-limited parallel fetch â€” max 5 simultaneous RPC calls.
     // Falls back to sequential per-stream if the parallel pass throws.
     const limit = pLimit(5);
     let parallelFailed = false;
@@ -755,7 +752,7 @@ export async function createStream(input: StreamInput): Promise<StreamRecord> {
   // Invalidate cache to ensure freshness after stream creation
   await invalidateCache("stream:");
 
-  // Webhook fires after the transaction commits — a webhook failure
+  // Webhook fires after the transaction commits â€” a webhook failure
   // must never roll back an already-persisted stream.
   triggerWebhook("created", stream);
   return stream;
