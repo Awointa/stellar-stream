@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Stream } from "../types/stream";
 import { StreamEvent, getStream, getStreamHistory } from "../services/api";
 import { CopyableAddress } from "./CopyableAddress";
+import { CliffMarker } from "./CliffMarker";
 
 interface StreamDetailDrawerProps {
   streamId: string;
@@ -368,15 +369,25 @@ export function StreamDetailDrawer({
                     {stream.progress.vestedAmount} / {stream.totalAmount} {stream.assetCode} vested
                   </span>
                 </div>
-                <div
-                  className="progress-bar"
-                  role="progressbar"
-                  aria-valuenow={stream.progress.percentComplete}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label="Stream progress"
-                >
-                  <div style={{ width: `${Math.min(stream.progress.percentComplete, 100)}%` }} />
+                <div style={{ position: "relative", padding: "0.5rem 0" }}>
+                  {stream.cliffSeconds != null && stream.cliffSeconds > 0 && (
+                    <CliffMarker
+                      startAt={stream.startAt}
+                      cliffSeconds={stream.cliffSeconds}
+                      durationSeconds={stream.durationSeconds}
+                      now={Math.floor(Date.now() / 1000)}
+                    />
+                  )}
+                  <div
+                    className="progress-bar"
+                    role="progressbar"
+                    aria-valuenow={stream.progress.percentComplete}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label="Stream progress"
+                  >
+                    <div style={{ width: `${Math.min(stream.progress.percentComplete, 100)}%` }} />
+                  </div>
                 </div>
                 <dl className="drawer-dl" style={{ marginTop: "0.75rem" }}>
                   <div className="drawer-dl__row">

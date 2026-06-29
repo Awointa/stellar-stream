@@ -98,6 +98,33 @@ Key tables:
 - `codeql.yml`: Static security scan
 - `gitleaks.yml`: Secret scanning
 
+## Contract Build & WASM Optimization
+
+The Soroban contract uses multi-level size optimization:
+
+**Cargo Release Profile** (`contracts/Cargo.toml`):
+- `opt-level = "z"` - Optimize for minimal size
+- `lto = true` - Link-time optimization across all dependencies
+- `strip = "symbols"` - Remove debug symbols
+- `codegen-units = 1` - Maximum optimization opportunities
+- `panic = "abort"` - Minimal panic handling
+
+**wasm-opt Post-Build** (`contracts/build.rs`):
+- Automatically runs on `soroban contract build` (release mode)
+- Uses wasm-opt `-O4` (aggressive size reduction, ~10-15% additional)
+- Requires: `npm install -g wasm-opt` or `brew install binaryen`
+
+**Build Commands**:
+```bash
+cd contracts
+make build              # Standard build with Cargo
+make build-optimized   # Build + explicit wasm-opt -O4
+make profile-size      # Show current binary size
+make test              # Run contract tests
+```
+
+**Size Tracking**: See `SIZE_PROFILE.md` for baseline metrics and optimization history.
+
 ## Code Patterns
 
 **Parameter Binding in SQL**: Use `@name` syntax for `better-sqlite3` prepared statements (not `?`):
