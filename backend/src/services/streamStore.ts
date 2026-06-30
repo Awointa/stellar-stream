@@ -452,7 +452,7 @@ export function calculateProgress(
   const effectiveAt =
     stream.pausedAt !== undefined ? Math.min(at, stream.pausedAt) : at;
 
-  const elapsed = Math.max(0, Math.min(effectiveAt - stream.startAt, stream.durationSeconds));
+  const elapsed = Math.max(0, Math.min(effectiveAt - stream.startAt - stream.pausedDuration, stream.durationSeconds));
 
   const ratio = Math.min(1, elapsed / stream.durationSeconds);
   const vestedAmount = stream.totalAmount * ratio;
@@ -863,6 +863,7 @@ export async function createStream(input: StreamInput): Promise<StreamRecord> {
     startAt,
     createdAt: nowInSeconds(),
     pausedDuration: 0,
+    cliffSeconds: input.cliffSeconds ?? 0,
   };
 
   // Atomically write the stream row and the creation event.

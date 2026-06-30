@@ -1292,8 +1292,8 @@ app.post(
         await cancelStream(streamId);
         canceled.push(streamId);
       } catch (error: any) {
-        console.error(`Failed to cancel stream ${streamId}:`, error);
-        failed.push({ id: streamId, error: error.message || "Unknown error" });
+        logger.error({ err: error, streamId }, "failed to cancel stream in bulk operation");
+        failed.push({ id: streamId, error: "Failed to cancel stream" });
       }
     }
 
@@ -1836,30 +1836,3 @@ app.delete("/api/streams/:id", adminAuth, (req: Request, res: Response) => {
     );
   }
 });
-
-async function startServer() {
-  const config = validateEnv();
-
-  initCache();
-
-  await initSoroban();
-  await syncStreams();
-
-  if (config.sorobanEnabled && config.contractId) {
-    initIndexer(config.rpcUrl, config.contractId, config.networkPassphrase);
-    startIndexer(config.indexerPollIntervalMs);
-    startReconciliationJob(config.reconciliationIntervalMs);
-  } else {
-    console.warn("CONTRACT_ID not set, event indexer will not start");
-  }
-
-  app.listen(config.port, () => {
-    console.log(
-      `StellarStream API listening on http://localhost:${config.port}`,
-    );
-  });
-}
-
-if (require.main === module) {
-  startServer().catch(console.error);
-}

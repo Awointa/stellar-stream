@@ -1,3 +1,13 @@
+import path from "path";
+import fs from "fs";
+
+// Use a separate test database
+const TEST_DB_PATH = path.join(__dirname, "..", "..", "data", "test-bulk-cancel-streams.db");
+const TEST_SECRET = "test_secret_for_bulk_cancel_integration";
+
+// Set DB_PATH before importing db-dependent modules
+process.env.DB_PATH = TEST_DB_PATH;
+
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import jwt from "jsonwebtoken";
@@ -5,12 +15,6 @@ import { app } from "../index";
 import { initDb, getDb } from "./db";
 import { initCache } from "./cache";
 import { getJwtSecret } from "./auth";
-import path from "path";
-import fs from "fs";
-
-// Use a separate test database
-const TEST_DB_PATH = path.join(__dirname, "..", "..", "data", "test-bulk-cancel-streams.db");
-const TEST_SECRET = "test_secret_for_bulk_cancel_integration";
 
 describe("POST /api/streams/bulk-cancel Integration Tests", () => {
   let authToken: string;
@@ -21,10 +25,7 @@ describe("POST /api/streams/bulk-cancel Integration Tests", () => {
     // Set test JWT secret
     vi.stubEnv('JWT_SECRET', TEST_SECRET);
     
-    // Set test database path
-    process.env.DB_PATH = TEST_DB_PATH;
-    
-    // Initialize database
+    // Initialize database (DB_PATH already set at module load time)
     initDb();
     initCache();
 
@@ -115,14 +116,14 @@ describe("POST /api/streams/bulk-cancel Integration Tests", () => {
       });
 
       // Verify streams 1 and 2 are canceled
-      const canceledStream1 = db.prepare("SELECT * FROM streams WHERE id = ?").get("1") as any;
-      const canceledStream2 = db.prepare("SELECT * FROM streams WHERE id = ?").get("2") as any;
+      const canceledStream1 = db.prepare("SELECT * FROM streams WHERE id = @id").get({ id: "1" }) as any;
+      const canceledStream2 = db.prepare("SELECT * FROM streams WHERE id = @id").get({ id: "2" }) as any;
       
-      expect(canceledStream1.canceled_at).toBeDefined();
-      expect(canceledStream2.canceled_at).toBeDefined();
+      expect(canceledStream1.canceled_at).not.toBeNull();
+      expect(canceledStream2.canceled_at).not.toBeNull();
       
       // Verify stream 3 is NOT canceled
-      const notCanceledStream3 = db.prepare("SELECT * FROM streams WHERE id = ?").get("3") as any;
+      const notCanceledStream3 = db.prepare("SELECT * FROM streams WHERE id = @id").get({ id: "3" }) as any;
       expect(notCanceledStream3.canceled_at).toBeNull();
     });
 
