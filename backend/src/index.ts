@@ -1,10 +1,14 @@
 import cors from "cors";
+import helmet from "helmet";
 import { requestLogger } from "./middleware/requestLogger";
 import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import swaggerUi from "swagger-ui-express";
 import { z } from "zod";
+import { createServer } from "http";
+import { searchStreamsFts } from "./services/db";
+import { initWebSocket } from "./services/websocket";
 import {
   normalizeUnknownApiError,
   sendApiError,
@@ -27,9 +31,13 @@ import {
   getCircuitBreakerStatus,
 } from "./services/indexer";
 import { adminAuth } from "./middleware/adminAuth";
-import { deleteStreamById } from "./services/streamStore";
+import { deleteStreamById, reconcileStream } from "./services/streamStore";
+import { getCache } from "./services/cache";
+import { getStreamStats } from "./services/stats";
 
 import { startReconciliationJob } from "./services/reconciliationJob";
+import { startArchiveJob } from "./services/archiveJob";
+import { startStreamProgressBroadcaster } from "./services/streamProgressBroadcaster";
 import { startWebhookWorker } from "./services/webhookWorker";
 import {
   getDeadLetters,
@@ -50,6 +58,7 @@ import {
   listStreamsByRecipient,
   listStreamsBySender,
   markStreamComplete,
+  nowInSeconds,
   pauseStream,
   estimateCreateStreamFee,
   refreshStreamStatuses,
@@ -58,6 +67,7 @@ import {
   StreamStatus,
   syncStreams,
   updateStreamStartAt,
+  getOnChainStreamCount,
 } from "./services/streamStore";
 
 import {
@@ -76,6 +86,7 @@ import {
 } from "./validation/schemas";
 import { validateEnv } from "./config/validateEnv";
 import { getMetricsHistory } from "./services/metricsHistory";
+import { register } from "./services/metrics";
 import { initCache } from "./services/cache";
 import { getGlobalStats } from "./services/stats";
 import { logger } from "./logger";
@@ -98,6 +109,9 @@ const port = Number(process.env.PORT ?? 3001);
 const ALLOWED_ASSETS = (process.env.ALLOWED_ASSETS || "USDC,XLM")
   .split(",")
   .map((asset) => asset.trim().toUpperCase());
+
+const SORT_FIELDS = ["totalAmount", "startAt", "createdAt", "durationSeconds"] as const;
+const SORT_ORDERS = ["asc", "desc"] as const;
 
 const listStreamsQuerySchema = z.object({
   status: z
@@ -147,6 +161,12 @@ const listStreamsQuerySchema = z.object({
       PAGINATION_MAX_LIMIT,
       `limit must be less than or equal to ${PAGINATION_MAX_LIMIT}`,
     )
+    .optional(),
+  sort: z
+    .enum(SORT_FIELDS)
+    .optional(),
+  order: z
+    .enum(SORT_ORDERS)
     .optional(),
 });
 
@@ -228,6 +248,41 @@ const claimableLimiter = rateLimit({
   },
 });
 
+// Per-stream rate limiter for reconcile endpoint: 5 calls per stream per minute
+const reconcileLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    // Use stream ID from params as the rate limit key
+    return `reconcile:${req.params.id}`;
+  },
+  handler: (req: Request, res: Response) => {
+    const resetTime = (req as any).rateLimit?.resetTime;
+    const retryAfter = resetTime
+      ? Math.ceil((resetTime.getTime() - Date.now()) / 1000)
+      : 60;
+    res.set("Retry-After", String(Math.max(1, retryAfter)));
+    sendApiError(req, res, 429, "Too many reconcile requests for this stream. Please try again later.", {
+      code: "RATE_LIMIT_EXCEEDED",
+    });
+  },
+});
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'none'"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
+app.use(cors());
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS;
 
 if (ALLOWED_ORIGINS) {
@@ -322,11 +377,12 @@ app.get("/api/health", (_req: Request, res: Response) => {
   });
 });
 
-app.get("/api/stats", (_req: Request, res: Response) => {
+app.get("/api/stats", async (_req: Request, res: Response) => {
   try {
     const stats = getGlobalStats();
+    const onChainStreamCount = await getOnChainStreamCount();
     res.set("Cache-Control", "max-age=30");
-    res.json({ data: stats });
+    res.json({ data: { ...stats, onChainStreamCount, localStreamCount: stats.total } });
   } catch (error) {
     logger.error({ err: error }, "Failed to get stats");
     sendApiError(_req, res, 500, "Failed to compute stats.", { code: "INTERNAL_ERROR" });
@@ -347,7 +403,7 @@ app.get("/api/metrics", async (_req: Request, res: Response) => {
     }
   }
 
-  const output = await metricsRegistry.metrics();
+  const output = await register.metrics();
   res.setHeader("Content-Type", "text/plain; version=0.0.4");
   res.send(output);
 });
@@ -420,9 +476,10 @@ app.get("/api/streams", readLimiter, async (req: Request, res: Response) => {
   const hasPage = req.query.page !== undefined;
   const hasLimit = req.query.limit !== undefined;
 
-  let data = listStreams(query.include_archived).map((stream) => ({
+  const now = nowInSeconds();
+  let data = listStreams(query.include_archived, query.sort ?? "createdAt", query.order ?? "desc").map((stream) => ({
     ...stream,
-    progress: calculateProgress(stream),
+    progress: calculateProgress(stream, now),
   }));
 
   if (query.status) {
@@ -474,7 +531,7 @@ app.get("/api/streams", readLimiter, async (req: Request, res: Response) => {
 
   const offset = (page - 1) * limit;
   const paginatedData = data.slice(offset, offset + limit);
-  
+
   const result = {
     data: paginatedData,
     total,
@@ -491,6 +548,36 @@ app.get("/api/streams", readLimiter, async (req: Request, res: Response) => {
 
   res.set("Cache-Control", "max-age=5");
   res.json(result);
+});
+
+app.get("/api/streams/search", readLimiter, (req: Request, res: Response) => {
+  const q = z.string().min(1, "search query must not be empty").safeParse(req.query.q);
+  if (!q.success) {
+    sendValidationError(req, res, q.error.issues);
+    return;
+  }
+
+  try {
+    const streamIds = searchStreamsFts(q.data);
+    const now = nowInSeconds();
+    const results = streamIds
+      .map((id) => getStream(id))
+      .filter((s) => s !== null)
+      .map((s) => ({
+        ...s,
+        progress: calculateProgress(s!, now),
+      }));
+
+    res.set("Cache-Control", "max-age=5");
+    res.json({
+      data: results,
+      total: results.length,
+      query: q.data,
+    });
+  } catch (err) {
+    logger.error({ err }, "search failed");
+    sendApiError(req, res, 500, "Search failed.", { code: "SEARCH_ERROR" });
+  }
 });
 
 app.get("/api/events", readLimiter, (req: Request, res: Response) => {
@@ -549,9 +636,10 @@ app.get(
       // If cache fails, just proceed without caching
     }
 
+    const now = nowInSeconds();
     let data = listStreams(query.include_archived).map((stream) => ({
       ...stream,
-      progress: calculateProgress(stream),
+      progress: calculateProgress(stream, now),
     }));
 
     if (query.status) {
@@ -694,12 +782,13 @@ app.get(
 
     const rawStreams = await withAddressCache(
       `streams:sender:${address}`,
-      () => listStreamsBySender(address),
+      () => listStreamsBySender(address, query.sort ?? "createdAt", query.order ?? "desc"),
     );
 
+    const now = nowInSeconds();
     let data = rawStreams.map((stream) => ({
       ...stream,
-      progress: calculateProgress(stream),
+      progress: calculateProgress(stream, now),
     }));
 
     if (query.status) {
@@ -778,12 +867,13 @@ app.get(
 
     const rawStreams = await withAddressCache(
       `streams:recipient:${address}`,
-      () => listStreamsByRecipient(address),
+      () => listStreamsByRecipient(address, query.sort ?? "createdAt", query.order ?? "desc"),
     );
 
+    const now = nowInSeconds();
     let data = rawStreams.map((stream) => ({
       ...stream,
-      progress: calculateProgress(stream),
+      progress: calculateProgress(stream, now),
     }));
 
     if (query.status) {
@@ -880,9 +970,10 @@ app.get(
     }
     const query = parsedQuery.data;
 
-    let data = listStreamsByRecipient(accountId).map((stream) => ({
+    const now = nowInSeconds();
+    let data = listStreamsByRecipient(accountId, query.sort ?? "createdAt", query.order ?? "desc").map((stream) => ({
       ...stream,
-      progress: calculateProgress(stream),
+      progress: calculateProgress(stream, now),
     }));
 
     if (query.status) {
@@ -953,9 +1044,10 @@ app.get(
     }
     const query = parsedQuery.data;
 
-    let data = listStreamsBySender(accountId).map((stream) => ({
+    const now = nowInSeconds();
+    let data = listStreamsBySender(accountId, query.sort ?? "createdAt", query.order ?? "desc").map((stream) => ({
       ...stream,
-      progress: calculateProgress(stream),
+      progress: calculateProgress(stream, now),
     }));
 
     if (query.status) {
@@ -1127,6 +1219,10 @@ app.post(
 
     try {
       const updated = await cancelStream(parsedId.value);
+      if (!updated) {
+        sendApiError(req, res, 500, "Failed to cancel stream.", { code: "INTERNAL_ERROR" });
+        return;
+      }
       res.json({
         data: {
           ...updated,
@@ -1299,6 +1395,49 @@ app.post(
   },
 );
 
+// POST /api/streams/:id/reconcile — sync on-chain state to local SQLite
+app.post(
+  "/api/streams/:id/reconcile",
+  authMiddleware,
+  reconcileLimiter,
+  async (req: Request, res: Response) => {
+    const parsedId = parseStreamId(req.params.id);
+    if (!parsedId.ok) {
+      sendValidationError(req, res, parsedId.issues);
+      return;
+    }
+
+    const stream = getStream(parsedId.value);
+    if (!stream) {
+      sendApiError(req, res, 404, "Stream not found.", { code: "NOT_FOUND" });
+      return;
+    }
+
+    try {
+      const updated = await reconcileStream(parsedId.value);
+      res.json({ data: { ...updated, progress: calculateProgress(updated) } });
+    } catch (error: any) {
+      if (error.message === "Stream not found on-chain") {
+        sendApiError(req, res, 404, "Stream not found on-chain.", { code: "NOT_FOUND" });
+        return;
+      }
+      const normalizedError = normalizeUnknownApiError(
+        error,
+        "Failed to reconcile stream.",
+      );
+      sendApiError(
+        req,
+        res,
+        normalizedError.statusCode,
+        normalizedError.message,
+        {
+          code: normalizedError.code ?? "INTERNAL_ERROR",
+        },
+      );
+    }
+  },
+);
+
 // POST /api/streams/:id/claim — recipient claims vested tokens
 app.post(
   "/api/streams/:id/claim",
@@ -1425,7 +1564,9 @@ app.patch(
     }
 
     try {
-<
+      const updated = await updateStreamStartAt(parsedId.value, parsedBody.data.startAt);
+      res.json({ data: { ...updated, progress: calculateProgress(updated) } });
+    } catch (error: any) {
       const normalizedError = normalizeUnknownApiError(
         error,
         "Failed to update stream start time.",
@@ -1435,7 +1576,8 @@ app.patch(
         res,
         normalizedError.statusCode,
         normalizedError.message,
-
+        { code: normalizedError.code ?? "INTERNAL_ERROR" },
+      );
     }
   },
 );
@@ -1457,19 +1599,18 @@ app.get(
     }
 
     // Parse and validate query parameters
-    const limit = Math.min(
-      Math.max(
-        1,
-        parseInt(req.query.limit as string) || STREAM_HISTORY_DEFAULT_LIMIT,
-      ),
-      STREAM_HISTORY_MAX_LIMIT,
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const pageSize = Math.min(
+      Math.max(1, parseInt(req.query.pageSize as string) || 20),
+      100,
     );
-    const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
 
     const total = countStreamEvents(parsedId.value);
-    const data = getStreamHistory(parsedId.value, limit, offset);
+    const offset = (page - 1) * pageSize;
+    const data = getStreamHistory(parsedId.value, pageSize, offset);
+    const hasMore = offset + pageSize < total;
 
-    res.json({ data, total, limit, offset });
+    res.json({ data, total, page, pageSize, hasMore });
   },
 );
 
@@ -1510,7 +1651,7 @@ app.get(
     }
 
     const progress = calculateProgress(stream);
-    const history = getStreamHistory(parsedId.value);
+    const history = getStreamHistory(parsedId.value, 50, 0, 'asc');
 
     res.json({
       data: {
@@ -1635,7 +1776,7 @@ app.post(
   "/api/webhooks/dead-letters/:id/requeue",
   authMiddleware,
   (req: Request, res: Response) => {
-    const id = parseInt(req.params.id, 10);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
     if (isNaN(id)) {
       sendApiError(req, res, 400, "Invalid ID format", {
         code: "VALIDATION_ERROR",
@@ -1687,8 +1828,14 @@ async function startServer() {
     logger.warn("CONTRACT_ID not set, event indexer will not start");
   }
 
-  app.listen(config.port, () => {
-    logger.info({ port: config.port }, "StellarStream API listening");
+  startArchiveJob(config.archiveCronIntervalMs);
+  startStreamProgressBroadcaster(5000);
+
+  const server = createServer(app);
+  initWebSocket(server);
+
+  server.listen(config.port, () => {
+    logger.info({ port: config.port }, "StellarStream API listening with WebSocket support");
   });
 }
 
@@ -1710,7 +1857,7 @@ app.delete("/api/streams/:id", adminAuth, (req: Request, res: Response) => {
     const deleted = deleteStreamById(parsedId.value);
 
     if (!deleted) {
-      sendApiError(req, res, 404, "Stream not found.", { code: "NOT_FOUND" });
+      sendApiError(req, res, 404, "Stream not found or already archived.", { code: "NOT_FOUND" });
       return;
     }
 

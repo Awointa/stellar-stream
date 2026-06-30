@@ -12,6 +12,14 @@ const DEFAULT_STALE_AFTER_MS = 4000;
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
+export function getWebSocketUrl(): string {
+  // Construct WebSocket URL from API base URL
+  const apiUrl = import.meta.env.VITE_API_URL || window.location.origin + "/api";
+  const wsProtocol = apiUrl.startsWith("https") ? "wss" : "ws";
+  const wsUrl = apiUrl.replace(/^https?:\/\//, "").replace(/\/api$/, "");
+  return `${wsProtocol}://${wsUrl}/api/ws`;
+}
+
 let authToken: string | null = null;
 export function setAuthToken(token: string | null) {
   authToken = token;
@@ -279,6 +287,7 @@ export interface StreamEvent {
   timestamp: number;
   actor?: string;
   amount?: number;
+  txHash?: string;
   metadata?: Record<string, any>;
 }
 
@@ -306,9 +315,26 @@ export async function fetchMetricsHistory(params: MetricsHistoryParams): Promise
     start: params.startTimestamp.toString(),
     end: params.endTimestamp.toString(),
   });
-  
+
   const response = await fetch(`${API_BASE}/metrics/history?${searchParams}`);
   const body = await parseResponse<{ data: any[] }>(response);
+  return body.data;
+}
+
+export interface StreamStats {
+  total_streams: number;
+  active_streams: number;
+  completed_streams: number;
+  canceled_streams: number;
+  total_vested: number;
+  avg_duration_seconds: number;
+  unique_senders: number;
+  unique_recipients: number;
+}
+
+export async function fetchStats(): Promise<StreamStats> {
+  const response = await fetch(`${API_BASE}/stats`);
+  const body = await parseResponse<{ data: StreamStats }>(response);
   return body.data;
 }
 export async function getStream(streamId: string, signal?: AbortSignal): Promise<Stream> {
@@ -332,6 +358,45 @@ export interface AppConfig {
 export async function getConfig(): Promise<AppConfig> {
   const response = await fetch(`${API_BASE}/config`);
   return parseResponse<AppConfig>(response);
+}
+
+/**
+ * Fetches recent events for a sender across all their streams.
+ * Aggregates events from all sender's streams and returns them sorted by timestamp (newest first).
+ * 
+ * @param senderAddress - The sender's wallet address
+ * @param limit - Maximum number of events to return (default: 10)
+ * @returns Array of StreamEvents sorted by timestamp descending
+ */
+export async function getSenderEvents(senderAddress: string, limit: number = 10): Promise<StreamEvent[]> {
+  try {
+    // First get all streams for the sender
+    const streamsResult = await listStreams({ sender: senderAddress });
+    const streams = streamsResult.data;
+
+    if (streams.length === 0) {
+      return [];
+    }
+
+    // Fetch events from each stream
+    const allEvents: StreamEvent[] = [];
+    const eventPromises = streams.map((stream) =>
+      getStreamHistory(stream.id)
+        .then((events) => allEvents.push(...events))
+        .catch(() => {
+          // Silent fail on individual stream event fetch
+        })
+    );
+
+    await Promise.all(eventPromises);
+
+    // Sort by timestamp descending (most recent first) and limit
+    return allEvents
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, limit);
+  } catch {
+    return [];
+  }
 }
 
 export function clearCache() {

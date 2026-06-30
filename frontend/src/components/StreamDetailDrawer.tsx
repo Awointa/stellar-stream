@@ -2,6 +2,29 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Stream } from "../types/stream";
 import { StreamEvent, getStream, getStreamHistory } from "../services/api";
 import { CopyableAddress } from "./CopyableAddress";
+import { CliffMarker } from "./CliffMarker";
+
+const STELLAR_EXPERT_BASE = "https://stellar.expert/explorer/testnet/tx";
+
+/**
+ * Renders a transaction hash as a truncated, clickable link to Stellar Expert.
+ * Shows first 8 + last 8 characters with the full hash in a tooltip.
+ */
+export function TxHashLink({ txHash }: { txHash: string }) {
+  const truncated = `${txHash.slice(0, 8)}…${txHash.slice(-8)}`;
+  return (
+    <a
+      href={`${STELLAR_EXPERT_BASE}/${txHash}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={txHash}
+      className="tx-hash-link"
+      aria-label={`View transaction ${txHash} on Stellar Expert`}
+    >
+      <code>{truncated}</code>
+    </a>
+  );
+}
 
 interface StreamDetailDrawerProps {
   streamId: string;
@@ -368,15 +391,25 @@ export function StreamDetailDrawer({
                     {stream.progress.vestedAmount} / {stream.totalAmount} {stream.assetCode} vested
                   </span>
                 </div>
-                <div
-                  className="progress-bar"
-                  role="progressbar"
-                  aria-valuenow={stream.progress.percentComplete}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label="Stream progress"
-                >
-                  <div style={{ width: `${Math.min(stream.progress.percentComplete, 100)}%` }} />
+                <div style={{ position: "relative", padding: "0.5rem 0" }}>
+                  {stream.cliffSeconds != null && stream.cliffSeconds > 0 && (
+                    <CliffMarker
+                      startAt={stream.startAt}
+                      cliffSeconds={stream.cliffSeconds}
+                      durationSeconds={stream.durationSeconds}
+                      now={Math.floor(Date.now() / 1000)}
+                    />
+                  )}
+                  <div
+                    className="progress-bar"
+                    role="progressbar"
+                    aria-valuenow={stream.progress.percentComplete}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label="Stream progress"
+                  >
+                    <div style={{ width: `${Math.min(stream.progress.percentComplete, 100)}%` }} />
+                  </div>
                 </div>
                 <dl className="drawer-dl" style={{ marginTop: "0.75rem" }}>
                   <div className="drawer-dl__row">
@@ -471,6 +504,9 @@ export function StreamDetailDrawer({
                             {evt.actor && <span>· {evt.actor}</span>}
                             {evt.amount != null && (
                               <span>· {evt.amount} tokens</span>
+                            )}
+                            {evt.txHash && (
+                              <span>· <TxHashLink txHash={evt.txHash} /></span>
                             )}
                           </div>
                         </div>
